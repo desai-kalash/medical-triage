@@ -3,10 +3,12 @@ package com.triage.messages;
 import akka.actor.typed.ActorRef;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
 
 /**
  * Centralized message definitions for the Medical Triage System
  * Demonstrates all Akka communication patterns: tell, ask, forward
+ * Enhanced with Vector Database support for medical knowledge retrieval
  */
 public class Messages {
 
@@ -115,30 +117,51 @@ public class Messages {
         }
     }
 
-    // ========== RETRIEVAL MESSAGES ==========
+    // ========== ENHANCED RETRIEVAL MESSAGES (VECTOR DATABASE) ==========
     public interface RetrievalCommand {}
     
-    public static class RetrieveContext implements RetrievalCommand {
+    public static class Retrieve implements RetrievalCommand {
         public final String sessionId;
-        public final String symptoms;
-        public final ActorRef<RetrievalResult> replyTo;
+        public final String query;
+        public final int topK;
+        public final ActorRef<Retrieved> replyTo;
         
-        public RetrieveContext(String sessionId, String symptoms, ActorRef<RetrievalResult> replyTo) {
+        public Retrieve(String sessionId, String query, int topK, ActorRef<Retrieved> replyTo) {
             this.sessionId = sessionId;
-            this.symptoms = symptoms;
+            this.query = query;
+            this.topK = topK;
             this.replyTo = replyTo;
         }
     }
     
-    public static class RetrievalResult {
+    public static class Retrieved {
         public final String sessionId;
-        public final String context;
+        public final List<RetrievedChunk> chunks;
         public final boolean success;
         
-        public RetrievalResult(String sessionId, String context, boolean success) {
+        public Retrieved(String sessionId, List<RetrievedChunk> chunks, boolean success) {
             this.sessionId = sessionId;
-            this.context = context;
+            this.chunks = chunks;
             this.success = success;
+        }
+    }
+    
+    public static class RetrievedChunk {
+        public final String id;
+        public final String text;
+        public final String sourceName;
+        public final String sourceUrl;
+        public final String category;
+        public final double score;
+        
+        public RetrievedChunk(String id, String text, String sourceName, String sourceUrl, 
+                            String category, double score) {
+            this.id = id;
+            this.text = text;
+            this.sourceName = sourceName;
+            this.sourceUrl = sourceUrl;
+            this.category = category;
+            this.score = score;
         }
     }
 
@@ -214,10 +237,10 @@ public class Messages {
     
     public static class SessionHistory {
         public final String sessionId;
-        public final java.util.List<String> interactions;
+        public final List<String> interactions;
         public final int totalInteractions;
         
-        public SessionHistory(String sessionId, java.util.List<String> interactions) {
+        public SessionHistory(String sessionId, List<String> interactions) {
             this.sessionId = sessionId;
             this.interactions = interactions;
             this.totalInteractions = interactions.size();

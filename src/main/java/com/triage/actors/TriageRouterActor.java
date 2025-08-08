@@ -4,10 +4,13 @@ import akka.actor.typed.*;
 import akka.actor.typed.javadsl.*;
 import com.triage.messages.Messages.*;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 /**
- * TriageRouterActor - Core system orchestrator
- * Demonstrates ASK and FORWARD communication patterns using manual message handling
- * Responsibility: Coordinate retrieval → LLM analysis → specialized care routing
+ * Enhanced TriageRouterActor - Core system orchestrator with Vector Database
+ * Demonstrates ASK and FORWARD communication patterns
+ * Now includes vector similarity search for grounded medical knowledge
  */
 public class TriageRouterActor extends AbstractBehavior<TriageCommand> {
 
@@ -47,14 +50,14 @@ public class TriageRouterActor extends AbstractBehavior<TriageCommand> {
         }
     }
 
-    // Additional internal messages
-    public static class RetrievalComplete implements TriageCommand {
+    // NEW: Vector retrieval completion message
+    public static class VectorRetrievalComplete implements TriageCommand {
         public final String sessionId;
         public final String symptoms;
         public final ActorRef<TriageResponse> replyTo;
-        public final RetrievalResult retrievalResult;
+        public final Retrieved retrievalResult;
 
-        public RetrievalComplete(String sessionId, String symptoms, ActorRef<TriageResponse> replyTo, RetrievalResult retrievalResult) {
+        public VectorRetrievalComplete(String sessionId, String symptoms, ActorRef<TriageResponse> replyTo, Retrieved retrievalResult) {
             this.sessionId = sessionId;
             this.symptoms = symptoms;
             this.replyTo = replyTo;
@@ -62,21 +65,21 @@ public class TriageRouterActor extends AbstractBehavior<TriageCommand> {
         }
     }
 
-    // Response handlers for manual ASK pattern
-    public static class RetrievalResponseHandler extends AbstractBehavior<RetrievalResult> {
+    // NEW: Vector retrieval response handler
+    public static class VectorRetrievalHandler extends AbstractBehavior<Retrieved> {
         private final String sessionId;
         private final String symptoms;
         private final ActorRef<TriageResponse> originalReplyTo;
         private final ActorRef<TriageCommand> triageRouter;
 
-        public static Behavior<RetrievalResult> create(String sessionId, String symptoms, 
-                                                      ActorRef<TriageResponse> originalReplyTo,
-                                                      ActorRef<TriageCommand> triageRouter) {
-            return Behaviors.setup(context -> new RetrievalResponseHandler(context, sessionId, symptoms, originalReplyTo, triageRouter));
+        public static Behavior<Retrieved> create(String sessionId, String symptoms, 
+                                                ActorRef<TriageResponse> originalReplyTo,
+                                                ActorRef<TriageCommand> triageRouter) {
+            return Behaviors.setup(context -> new VectorRetrievalHandler(context, sessionId, symptoms, originalReplyTo, triageRouter));
         }
 
-        private RetrievalResponseHandler(ActorContext<RetrievalResult> context, String sessionId, String symptoms,
-                                        ActorRef<TriageResponse> originalReplyTo, ActorRef<TriageCommand> triageRouter) {
+        private VectorRetrievalHandler(ActorContext<Retrieved> context, String sessionId, String symptoms,
+                                      ActorRef<TriageResponse> originalReplyTo, ActorRef<TriageCommand> triageRouter) {
             super(context);
             this.sessionId = sessionId;
             this.symptoms = symptoms;
@@ -85,22 +88,23 @@ public class TriageRouterActor extends AbstractBehavior<TriageCommand> {
         }
 
         @Override
-        public Receive<RetrievalResult> createReceive() {
+        public Receive<Retrieved> createReceive() {
             return newReceiveBuilder()
-                    .onMessage(RetrievalResult.class, this::onRetrievalResult)
+                    .onMessage(Retrieved.class, this::onRetrieved)
                     .build();
         }
 
-        private Behavior<RetrievalResult> onRetrievalResult(RetrievalResult result) {
+        private Behavior<Retrieved> onRetrieved(Retrieved result) {
             if (result.success) {
-                triageRouter.tell(new RetrievalComplete(sessionId, symptoms, originalReplyTo, result));
+                triageRouter.tell(new VectorRetrievalComplete(sessionId, symptoms, originalReplyTo, result));
             } else {
-                triageRouter.tell(new ProcessingError(sessionId, symptoms, originalReplyTo, "Retrieval failed"));
+                triageRouter.tell(new ProcessingError(sessionId, symptoms, originalReplyTo, "Vector retrieval failed"));
             }
             return Behaviors.stopped();
         }
     }
 
+    // LLM response handler (same as before)
     public static class LLMResponseHandler extends AbstractBehavior<LLMAnalysisResult> {
         private final String sessionId;
         private final String symptoms;
@@ -162,14 +166,14 @@ public class TriageRouterActor extends AbstractBehavior<TriageCommand> {
         this.selfCare = selfCare;
         this.appointmentCare = appointmentActor;
         
-        getContext().getLog().info("🔀 TriageRouterActor initialized");
+        getContext().getLog().info("🔀 TriageRouterActor initialized with vector database support");
     }
 
     @Override
     public Receive<TriageCommand> createReceive() {
         return newReceiveBuilder()
                 .onMessage(ProcessSymptoms.class, this::onProcessSymptoms)
-                .onMessage(RetrievalComplete.class, this::onRetrievalComplete)
+                .onMessage(VectorRetrievalComplete.class, this::onVectorRetrievalComplete)  // NEW
                 .onMessage(ProcessingError.class, this::onProcessingError)
                 .onMessage(ProcessingComplete.class, this::onProcessingComplete)
                 .build();
@@ -180,37 +184,80 @@ public class TriageRouterActor extends AbstractBehavior<TriageCommand> {
             msg.sessionId, msg.symptoms);
         
         logger.tell(new LogEvent(msg.sessionId, "TriageRouter", 
-            "Starting triage process", "INFO"));
+            "Starting triage process with vector retrieval", "INFO"));
 
-        // STEP 1: Manual ASK PATTERN - Request context from retrieval actor
-        ActorRef<RetrievalResult> retrievalHandler = getContext().spawn(
-            RetrievalResponseHandler.create(msg.sessionId, msg.symptoms, msg.replyTo, getContext().getSelf()),
-            "retrieval-handler-" + msg.sessionId
+        // STEP 1: VECTOR SIMILARITY SEARCH - Get relevant medical knowledge
+        ActorRef<Retrieved> retrievalHandler = getContext().spawn(
+            VectorRetrievalHandler.create(msg.sessionId, msg.symptoms, msg.replyTo, getContext().getSelf()),
+            "vector-retrieval-" + msg.sessionId
         );
 
-        // Send message to retrieval actor with our response handler
-        retrievalActor.tell(new RetrieveContext(msg.sessionId, msg.symptoms, retrievalHandler));
+        // NEW: Send vector retrieval request (uses semantic similarity)
+        retrievalActor.tell(new Retrieve(msg.sessionId, msg.symptoms, 5, retrievalHandler));
 
         logger.tell(new LogEvent(msg.sessionId, "TriageRouter", 
-            "Manual ASK pattern initiated with RetrievalActor", "DEBUG"));
+            "Vector similarity search initiated", "DEBUG"));
 
         return this;
     }
 
-    private Behavior<TriageCommand> onRetrievalComplete(RetrievalComplete msg) {
-        logger.tell(new LogEvent(msg.sessionId, "TriageRouter", 
-            "Retrieval completed, asking LLM", "DEBUG"));
+    // NEW: Handle vector retrieval completion
+    private Behavior<TriageCommand> onVectorRetrievalComplete(VectorRetrievalComplete msg) {
+        // Build enriched medical context from vector search results
+        String enrichedContext = buildEnrichedContext(msg.retrievalResult.chunks, msg.sessionId);
         
-        // STEP 2: Manual ASK PATTERN - Request LLM analysis with retrieved context
+        logger.tell(new LogEvent(msg.sessionId, "TriageRouter", 
+            "Vector retrieval completed, asking LLM with enriched context", "DEBUG"));
+        
+        // STEP 2: Ask LLM with enriched medical context
         ActorRef<LLMAnalysisResult> llmHandler = getContext().spawn(
             LLMResponseHandler.create(msg.sessionId, msg.symptoms, msg.replyTo, getContext().getSelf()),
             "llm-handler-" + msg.sessionId
         );
 
-        // Send message to LLM actor with our response handler
-        llmActor.tell(new AnalyzeSymptoms(msg.sessionId, msg.symptoms, msg.retrievalResult.context, llmHandler));
+        // Send enriched prompt to LLM
+        llmActor.tell(new AnalyzeSymptoms(msg.sessionId, msg.symptoms, enrichedContext, llmHandler));
 
         return this;
+    }
+
+    /**
+     * NEW: Build enriched medical context from vector search results
+     */
+    private String buildEnrichedContext(List<RetrievedChunk> chunks, String sessionId) {
+        if (chunks.isEmpty()) {
+            logger.tell(new LogEvent(sessionId, "TriageRouter", 
+                "No medical knowledge chunks available - using general context", "WARNING"));
+            return "General medical knowledge - no specific guidance found for these symptoms.";
+        }
+        
+        StringBuilder context = new StringBuilder();
+        context.append("MEDICAL KNOWLEDGE BASE CONTEXT:\n\n");
+        
+        for (int i = 0; i < chunks.size(); i++) {
+            RetrievedChunk chunk = chunks.get(i);
+            context.append(String.format("[%d] %s (Source: %s, Relevance: %.3f)\n%s\n\n",
+                i + 1, chunk.category.toUpperCase(), chunk.sourceName, chunk.score, chunk.text));
+        }
+        
+        // Log which chunks were used for traceability
+        String chunkInfo = chunks.stream()
+            .map(c -> String.format("%s(%.3f)", c.id, c.score))
+            .collect(Collectors.joining(", "));
+        
+        logger.tell(new LogEvent(sessionId, "TriageRouter", 
+            "Using medical knowledge: " + chunkInfo, "INFO"));
+        
+        // Log sources for medical traceability
+        String sources = chunks.stream()
+            .map(c -> c.sourceName)
+            .distinct()
+            .collect(Collectors.joining(", "));
+        
+        logger.tell(new LogEvent(sessionId, "TriageRouter", 
+            "Medical sources consulted: " + sources, "INFO"));
+        
+        return context.toString();
     }
 
     private Behavior<TriageCommand> onProcessingError(ProcessingError msg) {

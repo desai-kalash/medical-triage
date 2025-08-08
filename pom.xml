@@ -71,6 +71,20 @@
       <version>4.12.0</version>
     </dependency>
 
+    <!-- Lucene Core for Vector Search -->
+    <dependency>
+      <groupId>org.apache.lucene</groupId>
+      <artifactId>lucene-core</artifactId>
+      <version>9.9.2</version>
+    </dependency>
+
+    <!-- Lucene Analysis Common -->
+    <dependency>
+      <groupId>org.apache.lucene</groupId>
+      <artifactId>lucene-analysis-common</artifactId>
+      <version>9.9.2</version>
+    </dependency>
+
     <!-- dotenv-java (to load API key from .env) -->
     <dependency>
       <groupId>io.github.cdimascio</groupId>
