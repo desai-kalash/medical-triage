@@ -85,6 +85,27 @@
       <version>9.9.2</version>
     </dependency>
 
+    <!-- Akka HTTP for Web Interface -->
+    <dependency>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-http_2.13</artifactId>
+      <version>10.5.2</version>
+    </dependency>
+
+    <!-- JSON marshalling support for HTTP -->
+    <dependency>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-http-jackson_2.13</artifactId>
+      <version>10.5.2</version>
+    </dependency>
+
+    <!-- Akka Streams (required for HTTP) -->
+    <dependency>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-stream_2.13</artifactId>
+      <version>2.8.0</version>
+    </dependency>
+
     <!-- dotenv-java (to load API key from .env) -->
     <dependency>
       <groupId>io.github.cdimascio</groupId>

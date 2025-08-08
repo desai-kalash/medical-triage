@@ -4,13 +4,13 @@ import akka.actor.typed.*;
 import akka.actor.typed.javadsl.*;
 import com.triage.actors.*;
 import com.triage.messages.Messages.*;
+import com.triage.http.HttpServer;
 
 import java.util.Scanner;
 
 /**
- * Medical Triage Assistant - Interactive Chatbot Mode
- * Simple single-node version that avoids all cluster serialization issues
- * Demonstrates all required Akka communication patterns with real user interaction
+ * Medical Triage Assistant - Main with Web Interface
+ * Starts both console and web interfaces
  */
 public class Main {
     
@@ -19,28 +19,27 @@ public class Main {
     private static boolean systemReady = false;
     
     public static void main(String[] args) {
-        System.out.println("🏥 Initializing Medical Triage Assistant...");
+        System.out.println("🏥 Initializing Medical Triage Assistant with Web Interface...");
         
-        // Create simple ActorSystem without cluster configuration
         ActorSystem<Void> system = ActorSystem.create(
-            createSimpleMainBehavior(),
-            "MedicalTriageSystem"  // Simple name, no cluster config
+            createWebEnabledBehavior(),
+            "MedicalTriageSystem"
         );
 
         // Wait for system initialization
         waitForSystemReady();
         
-        // Start interactive chatbot
+        // Start interactive chatbot (console) - web runs in parallel
         startInteractiveChatbot(system);
     }
     
     private static void waitForSystemReady() {
-        System.out.println("⏳ Starting up all actors...");
+        System.out.println("⏳ Starting up all actors and web server...");
         try {
             while (!systemReady) {
                 Thread.sleep(500);
             }
-            Thread.sleep(2000); // Additional time for full initialization
+            Thread.sleep(3000); // Wait for web server to start
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -50,24 +49,31 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
         
         System.out.println("\n🏥 ============================================");
-        System.out.println("🏥 MEDICAL TRIAGE ASSISTANT - CHATBOT MODE");
+        System.out.println("🏥 MEDICAL TRIAGE ASSISTANT - DUAL MODE");
         System.out.println("🏥 ============================================");
-        System.out.println("💬 I'm your AI-powered medical triage assistant.");
-        System.out.println("💬 Describe your symptoms and I'll help assess your situation.");
-        System.out.println("💬 Commands: 'quit' to exit, 'help' for guidance, 'demo' for automated tests\n");
+        System.out.println("💻 Console Interface: Ready for input below");
+        System.out.println("🌐 Web Interface: http://localhost:8080");
+        System.out.println("💬 Commands: 'quit' to exit, 'help' for guidance, 'web' for web info\n");
 
         showWelcomeMessage();
         
         while (true) {
-            System.out.print("\n🩺 You: ");
+            System.out.print("\n🩺 Console: ");
             String userInput = scanner.nextLine().trim();
             
             // Handle special commands
             if (userInput.equalsIgnoreCase("quit") || userInput.equalsIgnoreCase("exit")) {
                 System.out.println("\n👋 Thank you for using Medical Triage Assistant!");
-                System.out.println("⚠️  Remember: This is for educational purposes only.");
-                System.out.println("   Always consult real medical professionals for health concerns.");
+                System.out.println("🌐 Web interface will remain available at http://localhost:8080");
                 break;
+            }
+            
+            if (userInput.equalsIgnoreCase("web")) {
+                System.out.println("\n🌐 WEB INTERFACE INFORMATION:");
+                System.out.println("   URL: http://localhost:8080");
+                System.out.println("   Features: Professional chat UI, emergency alerts, source links");
+                System.out.println("   Mobile-friendly design with quick action buttons");
+                continue;
             }
             
             if (userInput.equalsIgnoreCase("help")) {
@@ -78,12 +84,12 @@ public class Main {
             if (userInput.equalsIgnoreCase("demo")) {
                 System.out.println("\n🧪 Running automated demo tests...");
                 runAutomatedDemo();
-                System.out.println("\n💬 Demo completed! You can now continue with manual input.");
+                System.out.println("\n💬 Demo completed! Try the web interface at http://localhost:8080");
                 continue;
             }
             
             if (userInput.isEmpty()) {
-                System.out.println("💡 Please describe your symptoms, or type 'help' for guidance.");
+                System.out.println("💡 Please describe your symptoms, 'web' for web info, or 'help' for guidance.");
                 continue;
             }
             
@@ -111,6 +117,7 @@ public class Main {
         }
         
         System.out.println("─".repeat(60));
+        System.out.println("🌐 Also try the web interface: http://localhost:8080");
     }
     
     private static void runAutomatedDemo() {
@@ -146,31 +153,23 @@ public class Main {
                 break;
             }
         }
-        
-        // Demo summary
-        logger.tell(new LogEvent("DEMO", "TestSuite", 
-            "📊 DEMO SUMMARY: All communication patterns demonstrated", "INFO"));
-        logger.tell(new LogEvent("DEMO", "TestSuite", 
-            "✅ TELL: UserInput → Router, Router → Logger", "INFO"));
-        logger.tell(new LogEvent("DEMO", "TestSuite", 
-            "✅ ASK: Router ↔ LLM, Router ↔ Retrieval", "INFO"));
-        logger.tell(new LogEvent("DEMO", "TestSuite", 
-            "✅ FORWARD: Router → Care Actors (preserving sender)", "INFO"));
     }
     
     private static void showWelcomeMessage() {
         System.out.println("🎯 SYSTEM CAPABILITIES:");
         System.out.println("   • Real-time AI symptom analysis using Gemini");
+        System.out.println("   • Vector database with medical knowledge retrieval");
         System.out.println("   • Distributed actor processing (tell/ask/forward patterns)");
         System.out.println("   • Intelligent triage routing (Emergency/Self-Care/Appointment)");
         System.out.println("   • Session tracking and conversation history");
-        System.out.println("   • Comprehensive medical knowledge base");
+        System.out.println("   • Web interface at http://localhost:8080");
     }
     
     private static void showHelp() {
         System.out.println("\n📋 HOW TO USE THE MEDICAL TRIAGE ASSISTANT:");
         System.out.println("─".repeat(60));
-        System.out.println("📝 DESCRIBE YOUR SYMPTOMS clearly and specifically");
+        System.out.println("🖥️  CONSOLE MODE (here): Type symptoms and get responses");
+        System.out.println("🌐 WEB MODE: Open http://localhost:8080 for modern chat interface");
         System.out.println();
         System.out.println("🔍 GOOD EXAMPLES:");
         System.out.println("   • \"I have severe chest pain and shortness of breath\"");
@@ -179,37 +178,21 @@ public class Main {
         System.out.println("   • \"Persistent cough for a week with yellow phlegm\"");
         System.out.println("   • \"Need to schedule a check-up for back pain\"");
         System.out.println();
-        System.out.println("🎯 THE SYSTEM WILL:");
-        System.out.println("   • Retrieve relevant medical knowledge");
-        System.out.println("   • Analyze symptoms using AI (Gemini)");
-        System.out.println("   • Classify urgency level");
-        System.out.println("   • Route to appropriate care level");
-        System.out.println("   • Provide specific recommendations");
-        System.out.println();
-        System.out.println("🤖 TECHNICAL FEATURES DEMONSTRATED:");
-        System.out.println("   • TELL: Fire-and-forget messaging");
-        System.out.println("   • ASK: Request-response patterns");
-        System.out.println("   • FORWARD: Message forwarding with sender preservation");
-        System.out.println("   • Distributed actor-based processing");
-        System.out.println();
         System.out.println("💡 COMMANDS:");
+        System.out.println("   • 'web' - Show web interface information");
         System.out.println("   • 'demo' - Run automated test cases");
         System.out.println("   • 'help' - Show this help message");
         System.out.println("   • 'quit' - Exit the application");
-        System.out.println();
-        System.out.println("⚠️  IMPORTANT DISCLAIMER:");
-        System.out.println("    This is an educational project demonstrating distributed systems.");
-        System.out.println("    Always consult real medical professionals for health issues.");
         System.out.println("─".repeat(60));
     }
 
-    private static Behavior<Void> createSimpleMainBehavior() {
+    private static Behavior<Void> createWebEnabledBehavior() {
         return Behaviors.setup(context -> {
-            context.getLog().info("🚀 Initializing Medical Triage Assistant (Simple Mode)...");
+            context.getLog().info("🚀 Initializing Medical Triage Assistant with Web + Console...");
             
             // Initialize core infrastructure actors
             ActorRef<LogCommand> loggerRef = context.spawn(LoggerActor.create(), "logger");
-            logger = loggerRef; // Store reference for interactive mode
+            logger = loggerRef;
             
             ActorRef<SessionCommand> sessionActor = context.spawn(
                 UserSessionActor.create(loggerRef), "session-manager");
@@ -228,25 +211,56 @@ public class Main {
             ActorRef<CareCommand> appointmentCare = context.spawn(
                 AppointmentActor.create(loggerRef), "appointment-care");
 
-            // Initialize triage router with all dependencies
+            // Initialize triage router
             ActorRef<TriageCommand> triageRouter = context.spawn(
                 TriageRouterActor.create(llmActor, retrievalActor, loggerRef, 
                                        emergencyCare, selfCare, appointmentCare), 
                 "triage-router");
 
-            // Initialize user input handler
+            // Initialize console user input handler
             ActorRef<UserInputCommand> userInputRef = context.spawn(
                 UserInputActor.create(triageRouter, loggerRef, sessionActor), 
                 "user-input");
-            userInputActor = userInputRef; // Store reference for interactive mode
+            userInputActor = userInputRef;
+
+            // Initialize UI orchestrator for web interface
+            ActorRef<UICommand> uiOrchestrator = context.spawn(
+                UIOrchestrator.create(retrievalActor, llmActor, loggerRef, 
+                                    emergencyCare, selfCare, appointmentCare),
+                "ui-orchestrator");
 
             loggerRef.tell(new LogEvent("SYSTEM", "MainSystem", 
                 "All actors initialized successfully", "INFO"));
 
+            // Start HTTP server
+            context.getLog().info("🌐 Starting HTTP server...");
+            
+            try {
+                HttpServer httpServer = new HttpServer(context.getSystem(), uiOrchestrator);
+                httpServer.start("localhost", 8080)
+                    .whenComplete((binding, throwable) -> {
+                        if (throwable == null) {
+                            System.out.println("\n🌐 ✅ WEB SERVER STARTED SUCCESSFULLY!");
+                            System.out.println("🌐 Open your browser: http://localhost:8080");
+                            System.out.println("🌐 Web interface is now available!");
+                            
+                            loggerRef.tell(new LogEvent("SYSTEM", "HttpServer", 
+                                "Web interface available at http://localhost:8080", "INFO"));
+                        } else {
+                            System.err.println("❌ HTTP Server failed to start: " + throwable.getMessage());
+                            throwable.printStackTrace();
+                        }
+                    });
+                    
+            } catch (Exception e) {
+                System.err.println("❌ HTTP server initialization error: " + e.getMessage());
+                e.printStackTrace();
+            }
+
             // Mark system as ready
             systemReady = true;
             
-            context.getLog().info("✅ Interactive Medical Triage Assistant ready for user input");
+            context.getLog().info("✅ Medical Triage Assistant ready - Console + Web");
 
             return Behaviors.empty();
         });

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Triage Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>🏥 Medical Triage Assistant</h1>
+            <p>AI-powered symptom assessment and care guidance</p>
+        </header>
+
+        <!-- Emergency banner (hidden by default) -->
+        <div id="emergency" class="emergency-banner hidden">
+            🚨 POTENTIAL EMERGENCY: Consider calling emergency services immediately
+        </div>
+
+        <!-- Chat container -->
+        <div id="chat" class="chat-container">
+            <div class="welcome-message">
+                <div class="bubble bot">
+                    <strong>👋 Hello! I'm your AI medical triage assistant.</strong><br><br>
+                    Please describe your symptoms clearly, and I'll help assess your situation and provide appropriate guidance.<br><br>
+                    <em>⚠️ This is for educational purposes only. Always consult real medical professionals for health concerns.</em>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick action chips -->
+        <div class="chips">
+            <button class="chip" data-add="for 2 days">+ duration</button>
+            <button class="chip" data-add="with fever 101°F">+ fever</button>
+            <button class="chip" data-add="pain level 7/10">+ pain scale</button>
+            <button class="chip" data-add="started suddenly">+ onset</button>
+        </div>
+
+        <!-- Input composer -->
+        <div id="composer" class="composer">
+            <input id="input" type="text" placeholder="Describe your symptoms..." autocomplete="off" maxlength="500">
+            <button id="send" class="send-button">
+                <span id="send-text">Send</span>
+                <span id="send-loading" class="hidden">...</span>
+            </button>
+        </div>
+
+        <!-- Footer with disclaimer -->
+        <footer>
+            <p>
+                <strong>Medical Disclaimer:</strong> This AI assistant is for educational and informational purposes only. 
+                It does not provide medical advice, diagnosis, or treatment. Always consult qualified healthcare 
+                professionals for medical concerns. In emergencies, call your local emergency services immediately.
+            </p>
+            <p class="tech-info">
+                Powered by Google Gemini AI • Vector Database • Distributed Actor System
+            </p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

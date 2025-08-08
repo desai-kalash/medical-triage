@@ -246,4 +246,54 @@ public class Messages {
             this.totalInteractions = interactions.size();
         }
     }
+
+    // ========== UI WEB INTERFACE MESSAGES ==========
+    public interface UICommand {}
+    
+    public static class UIQuery implements UICommand {
+        public final String text;
+        public final String sessionId;
+        public final ActorRef<UIResponse> replyTo;
+        
+        public UIQuery(String text, String sessionId, ActorRef<UIResponse> replyTo) {
+            this.text = text;
+            this.sessionId = sessionId != null && !sessionId.isEmpty() ? sessionId : 
+                           UUID.randomUUID().toString().substring(0, 8);
+            this.replyTo = replyTo;
+        }
+    }
+    
+    public static class UIResponse {
+        public final String sessionId;
+        public final String reply;              // Final text to show to user
+        public final String route;              // Emergency/SelfCare/Appointment/NonMedical
+        public final boolean emergency;         // True if requires immediate care
+        public final List<Source> sources;     // Medical sources with attribution
+        public final String disclaimer;         // Safety disclaimer
+        
+        public UIResponse(String sessionId, String reply, String route, boolean emergency,
+                         List<Source> sources, String disclaimer) {
+            this.sessionId = sessionId;
+            this.reply = reply;
+            this.route = route;
+            this.emergency = emergency;
+            this.sources = sources;
+            this.disclaimer = disclaimer;
+        }
+        
+        /**
+         * Source - Medical source attribution
+         */
+        public static class Source {
+            public final String name;
+            public final String url;
+            public final double score;
+            
+            public Source(String name, String url, double score) {
+                this.name = name;
+                this.url = url;
+                this.score = score;
+            }
+        }
+    }
 }
