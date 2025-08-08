@@ -37,25 +37,31 @@ public class EmergencyCareActor extends AbstractBehavior<CareCommand> {
         String emergencyResponse = String.format("""
             🚨 EMERGENCY MEDICAL ATTENTION REQUIRED
             
-            Session: %s
-            Symptoms: %s
-            Severity: %s
+            Based on your symptoms: %s
+            Severity Assessment: %s
             
-            IMMEDIATE ACTIONS:
-            ⚡ Call 911 or go to nearest Emergency Room immediately
-            ⚡ Do not drive yourself - call ambulance if needed
-            ⚡ If chest pain: Take aspirin if not allergic and call 911
-            ⚡ If difficulty breathing: Sit upright and seek immediate help
+            IMMEDIATE ACTIONS REQUIRED:
+            ⚡ Call 911 or emergency services immediately
+            ⚡ Do NOT drive yourself - call ambulance if needed
+            ⚡ If chest pain: Take aspirin if not allergic (unless told otherwise)
+            ⚡ If breathing difficulty: Sit upright, loosen tight clothing
+            ⚡ Stay calm and follow emergency dispatcher instructions
             
-            Analysis: %s
+            MEDICAL ANALYSIS:
+            %s
             
-            ⚠️ This is a medical emergency - do not delay seeking care!
-            """, msg.sessionId, msg.symptoms, msg.severity, msg.analysis);
+            WHY THIS IS URGENT:
+            These symptoms may indicate serious conditions such as heart attack, stroke, 
+            pulmonary embolism, or other life-threatening emergencies that require 
+            immediate medical intervention. Time is critical for the best outcomes.
+            
+            ⚠️ This is a medical emergency - do not delay seeking professional care!
+            """, msg.symptoms, msg.severity, msg.analysis);
 
         logger.tell(new LogEvent(msg.sessionId, "EmergencyCareActor", 
             "Emergency response generated", "INFO"));
 
-        // Send response back to original requester (demonstrates preserved sender context from FORWARD)
+        // Create proper response object
         TriageResponse response = new TriageResponse(
             msg.sessionId, 
             msg.symptoms, 
@@ -65,8 +71,11 @@ public class EmergencyCareActor extends AbstractBehavior<CareCommand> {
             true
         );
 
-        msg.originalSender.tell(response);
+        // Send response back to original requester
+        if (msg.originalSender != null) {
+            msg.originalSender.tell(response);
+        }
         
-        return Behaviors.stopped(); // Emergency cases terminate after handling
+        return this; // Keep actor alive (no need for complex shutdown)
     }
 }

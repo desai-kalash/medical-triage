@@ -361,28 +361,41 @@ public class TriageRouterActor extends AbstractBehavior<TriageCommand> {
     private String classifyUrgency(LLMAnalysisResult llmResult) {
         String analysis = llmResult.analysis.toLowerCase();
         String severity = llmResult.severity.toLowerCase();
+        String recommendation = llmResult.recommendation.toLowerCase();
         
         // Check for non-medical input first
         if (severity.contains("non_medical") || severity.equals("non_medical")) {
             return "non-medical";
         }
         
-        // Emergency classification
-        if (severity.contains("high") || severity.contains("severe") || severity.contains("critical") ||
-            analysis.contains("emergency") || analysis.contains("urgent") || 
-            analysis.contains("chest pain") || analysis.contains("difficulty breathing") ||
-            analysis.contains("severe pain") || analysis.contains("911")) {
+        // Emergency classification - be more specific
+        if (severity.contains("high") || severity.contains("critical") ||
+            analysis.contains("call 911") || analysis.contains("emergency services") ||
+            analysis.contains("immediate") || analysis.contains("urgent") ||
+            recommendation.contains("call 911") || recommendation.contains("emergency room") ||
+            analysis.contains("heart attack") || analysis.contains("stroke") ||
+            analysis.contains("severe bleeding") || analysis.contains("surgical emergency")) {
             return "emergency";
         }
         
         // Self-care classification
-        if (severity.contains("low") || severity.contains("mild") || severity.contains("minor") ||
-            analysis.contains("rest") || analysis.contains("home care") || 
-            analysis.contains("over-the-counter") || analysis.contains("self-treat")) {
+        if (severity.contains("low") || severity.contains("mild") ||
+            analysis.contains("home care") || analysis.contains("rest") ||
+            analysis.contains("over-the-counter") || analysis.contains("self-treat") ||
+            recommendation.contains("home remedies") || recommendation.contains("rest")) {
             return "self-care";
         }
         
-        // Default to appointment for moderate cases
+        // Appointment classification (more specific)
+        if (analysis.contains("schedule") || analysis.contains("appointment") ||
+            analysis.contains("healthcare provider") || analysis.contains("doctor") ||
+            recommendation.contains("schedule") || recommendation.contains("appointment") ||
+            severity.contains("moderate") || analysis.contains("persistent") ||
+            analysis.contains("chronic") || analysis.contains("recurring")) {
+            return "appointment";
+        }
+        
+        // Default to appointment for unclear cases (safer)
         return "appointment";
     }
 }

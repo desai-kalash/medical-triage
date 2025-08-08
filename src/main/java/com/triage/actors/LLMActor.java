@@ -176,35 +176,33 @@ public class LLMActor extends AbstractBehavior<LLMCommand> {
 
     private String buildMedicalPrompt(String symptoms, String context) {
         return String.format("""
-            You are a medical triage assistant. First, determine if the input describes medical symptoms or health concerns.
+            You are a medical triage assistant. Analyze the user input carefully.
             
-            INPUT: %s
+            USER INPUT: %s
             
-            MEDICAL CONTEXT: %s
+            MEDICAL CONTEXT FROM KNOWLEDGE BASE: %s
             
-            If this is NOT a medical query (like asking about capitals, general questions, etc.), respond with:
-            NON_MEDICAL_INPUT
+            INSTRUCTIONS:
+            1. If this is NOT about health/medical symptoms (like general questions, non-medical topics), respond with:
+               CLASSIFICATION: NON_MEDICAL
+               ANALYSIS: Non-medical input detected
+               SEVERITY: NON_MEDICAL
+               RECOMMENDATION: Please describe your medical symptoms or health concerns for triage assistance.
             
-            If this IS a medical query, provide your assessment in this exact format:
-            ANALYSIS: [Brief medical assessment]
-            SEVERITY: [HIGH/MODERATE/LOW]
-            RECOMMENDATION: [Specific action recommendation]
+            2. If this IS about medical symptoms, provide assessment in this exact format:
+               CLASSIFICATION: [EMERGENCY/SELF_CARE/APPOINTMENT]
+               ANALYSIS: [Brief medical assessment based on provided context]
+               SEVERITY: [HIGH/MODERATE/LOW]
+               RECOMMENDATION: [Specific action recommendation]
             
-            Focus on safety and appropriate level of care needed.
+            Use ONLY the provided medical context. Be conservative - when in doubt, recommend higher level of care.
+            For emergency situations, clearly state to call emergency services.
             """, symptoms, context != null ? context : "General medical knowledge");
     }
 
     private LLMAnalysisResult parseAIResponse(String sessionId, String aiResponse) {
         try {
-            // Check if this is a non-medical input
-            if (aiResponse.trim().equals("NON_MEDICAL_INPUT") || 
-                aiResponse.toUpperCase().contains("NON_MEDICAL_INPUT")) {
-                return LLMAnalysisResult.success(sessionId, 
-                    "Non-medical input detected", 
-                    "NON_MEDICAL", 
-                    "Please describe your medical symptoms or health concerns for triage assistance.");
-            }
-            
+            String classification = "";
             String analysis = "";
             String severity = "MODERATE";
             String recommendation = "";
@@ -213,13 +211,23 @@ public class LLMActor extends AbstractBehavior<LLMCommand> {
             String[] lines = aiResponse.split("\n");
             for (String line : lines) {
                 String upperLine = line.toUpperCase().trim();
-                if (upperLine.startsWith("ANALYSIS:")) {
+                if (upperLine.startsWith("CLASSIFICATION:")) {
+                    classification = line.substring(line.indexOf(":") + 1).trim();
+                } else if (upperLine.startsWith("ANALYSIS:")) {
                     analysis = line.substring(line.indexOf(":") + 1).trim();
                 } else if (upperLine.startsWith("SEVERITY:")) {
                     severity = line.substring(line.indexOf(":") + 1).trim();
                 } else if (upperLine.startsWith("RECOMMENDATION:")) {
                     recommendation = line.substring(line.indexOf(":") + 1).trim();
                 }
+            }
+
+            // Handle non-medical input
+            if (classification.toUpperCase().contains("NON_MEDICAL")) {
+                return LLMAnalysisResult.success(sessionId, 
+                    "Non-medical input detected", 
+                    "NON_MEDICAL", 
+                    "I'm a medical triage assistant. Please describe your medical symptoms or health concerns such as pain, discomfort, fever, cough, or other physical symptoms you're experiencing.");
             }
 
             // Fallback if structured parsing fails
