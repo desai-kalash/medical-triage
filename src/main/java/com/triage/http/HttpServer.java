@@ -2,26 +2,34 @@ package com.triage.http;
 
 import akka.actor.typed.ActorRef;
 import akka.actor.typed.ActorSystem;
+import akka.actor.typed.javadsl.AskPattern;
 import akka.http.javadsl.Http;
 import akka.http.javadsl.ServerBinding;
 import akka.http.javadsl.marshallers.jackson.Jackson;
 import akka.http.javadsl.model.StatusCodes;
 import akka.http.javadsl.server.AllDirectives;
 import akka.http.javadsl.server.Route;
+import akka.util.Timeout;
 import com.triage.http.ApiModels.*;
 import com.triage.messages.Messages.*;
 
+import java.time.Duration;
 import java.util.concurrent.CompletionStage;
 
 /**
- * HttpServer - Simple web interface with enhanced medical responses
+ * PHASE 1: HttpServer - Connected to Actor System
+ * Uses ProcessSymptoms message that TriageRouterActor actually handles
  */
 public class HttpServer extends AllDirectives {
     
     private final ActorSystem<Void> system;
+    private final ActorRef<TriageCommand> triageRouter;
+    private final Timeout timeout = Timeout.create(Duration.ofSeconds(30));
 
-    public HttpServer(ActorSystem<Void> system, ActorRef<UserInputCommand> userInputActor) {
+    public HttpServer(ActorSystem<Void> system, ActorRef<TriageCommand> triageRouter) {
         this.system = system;
+        this.triageRouter = triageRouter;
+        System.out.println("🎭 PHASE 1: HttpServer connected to TriageRouterActor");
     }
 
     public Route createRoutes() {
@@ -39,230 +47,136 @@ public class HttpServer extends AllDirectives {
                             return complete(StatusCodes.BAD_REQUEST, "Missing text field");
                         }
 
+                        // Quick non-medical filter for obvious cases
+                        if (isObviouslyNonMedical(request.text.toLowerCase())) {
+                            String sessionId = request.sessionId != null ? request.sessionId : generateSessionId();
+                            ChatResponse response = createNonMedicalResponse(sessionId);
+                            return completeOK(response, Jackson.marshaller());
+                        }
+
+                        // PHASE 1: Send to Actor System using ProcessSymptoms (what TriageRouter actually handles)
                         String sessionId = request.sessionId != null ? request.sessionId : generateSessionId();
-                        ChatResponse response = processInput(sessionId, request.text.trim());
                         
-                        return completeOK(response, Jackson.marshaller());
+                        System.out.println("🎭 PHASE 1: Sending to TriageRouterActor: " + request.text);
+                        
+                        // FIXED: Use ProcessSymptoms message and correct AskPattern syntax
+                        CompletionStage<TriageResponse> actorResponse = AskPattern.ask(
+                            triageRouter,
+                            replyTo -> new ProcessSymptoms(sessionId, request.text.trim(), replyTo),
+                            Duration.ofSeconds(30),
+                            system.scheduler()
+                        );
+                        
+                        return onComplete(actorResponse, result -> {
+    if (result.isSuccess()) {
+        TriageResponse triageResponse = result.get();
+        System.out.println("✅ PHASE 1: Got response from actors - Classification: " + triageResponse.classification);
+        System.out.println("✅ PHASE 1: Recommendation length: " + triageResponse.recommendation.length() + " characters");
+        
+        ChatResponse chatResponse = convertTriageResponseToWeb(triageResponse);
+        return completeOK(chatResponse, Jackson.marshaller());
+    } else {
+        // FIXED: Correct way to handle Akka Try failure
+        try {
+            result.get(); // This will throw the actual exception
+        } catch (Exception throwable) {
+            System.err.println("❌ PHASE 1: Actor system error: " + throwable.getMessage());
+            throwable.printStackTrace();
+        }
+        
+        ChatResponse errorResponse = createErrorResponse(sessionId);
+        return complete(StatusCodes.INTERNAL_SERVER_ERROR, errorResponse, Jackson.marshaller());
+    }
+});
                     })
                 )
             ),
             path("health", () ->
-                get(() -> complete(StatusCodes.OK, "Healthy"))
+                get(() -> complete(StatusCodes.OK, "Phase 1: Actor Integration Active"))
             )
         );
     }
 
-    private ChatResponse processInput(String sessionId, String userText) {
-        String textLower = userText.toLowerCase();
+    // PHASE 1: Convert TriageResponse to web ChatResponse
+    private ChatResponse convertTriageResponseToWeb(TriageResponse triageResponse) {
+        System.out.println("🔄 PHASE 1: Converting TriageResponse to ChatResponse");
         
-        // Check for non-medical input
-        if (isNonMedical(textLower)) {
-            return new ChatResponse(
-                sessionId,
-                "⚠️ I'm a medical triage assistant designed to help with health symptoms and medical concerns.\n\n" +
-                "Please describe your medical symptoms, such as:\n" +
-                "• Pain, discomfort, or unusual sensations\n" +
-                "• Changes in how you feel physically\n" +
-                "• Health concerns or symptoms you're experiencing\n\n" +
-                "Examples: 'I have chest pain', 'headache for 3 days', 'fever and cough'",
-                "NonMedical",
-                false,
-                java.util.List.of(),
-                "This system is designed for medical symptom assessment only."
-            );
-        }
+        // Map triage classification to web format
+        boolean emergency = triageResponse.classification.equals("Emergency") || 
+                           triageResponse.classification.equals("EMERGENCY") ||
+                           triageResponse.severity.equals("Critical");
         
-        String classification = classifySymptoms(textLower);
-        boolean emergency = classification.equals("Emergency");
-        String responseText = generateResponse(userText, classification, textLower);
-        var sources = getSources(classification, textLower);
+        // Create basic source list (will be enhanced in Phase 2 with real VDB sources)
+        java.util.List<SourceRef> sources = java.util.List.of(
+            new SourceRef("Medical Guidelines", "https://example.com/medical", 85.0)
+        );
         
         String disclaimer = emergency ? 
             "🚨 This is an educational system. For real emergencies, call emergency services immediately!" :
             "This is an educational AI system. Always consult real medical professionals.";
         
-        return new ChatResponse(sessionId, responseText, classification, emergency, sources, disclaimer);
+        return new ChatResponse(
+            triageResponse.sessionId,
+            triageResponse.recommendation,
+            triageResponse.classification,
+            emergency,
+            sources,
+            disclaimer
+        );
     }
 
-    private boolean isNonMedical(String textLower) {
-        if (textLower.contains("capital") || textLower.contains("country") || 
-            textLower.contains("weather") || textLower.contains("president")) {
-            return true;
-        }
-        if (textLower.contains("movie") || textLower.contains("song") || 
-            textLower.contains("calculate") || textLower.contains("recipe")) {
-            return true;
-        }
-        if (textLower.contains("butak") || textLower.contains("xyz") || 
-            textLower.contains("hello") || textLower.contains("test")) {
-            return true;
-        }
-        if (textLower.length() < 8 && !hasMedicalWords(textLower)) {
-            return true;
-        }
-        return false;
-    }
-
-    private boolean hasMedicalWords(String textLower) {
-        String[] words = {"pain", "hurt", "ache", "fever", "cough", "sick", "headache", "stomach", "chest"};
-        for (String word : words) {
-            if (textLower.contains(word)) {
+    // Simple non-medical filter for Phase 1
+    private boolean isObviouslyNonMedical(String textLower) {
+        String[] obviousNonMedical = {
+            "who is", "who was", "capital of", "president of",
+            "movie", "song", "calculate", "weather today",
+            "what is the capital", "biography of", "history of"
+        };
+        
+        for (String pattern : obviousNonMedical) {
+            if (textLower.contains(pattern)) {
+                System.out.println("🔍 PHASE 1: Non-medical detected: " + pattern);
                 return true;
             }
         }
+        
+        // Famous people
+        if (textLower.contains("gandhi") || textLower.contains("einstein") || 
+            textLower.contains("shakespeare") || textLower.contains("napoleon")) {
+            System.out.println("🔍 PHASE 1: Famous person detected");
+            return true;
+        }
+        
         return false;
     }
 
-    private String classifySymptoms(String textLower) {
-        // Emergency combinations
-        if (textLower.contains("severe chest pain") || 
-            (textLower.contains("chest pain") && textLower.contains("shortness of breath"))) {
-            return "Emergency";
-        }
-        if (textLower.contains("severe stomach pain") || textLower.contains("severe abdominal pain")) {
-            return "Emergency";
-        }
-        
-        // Self-care
-        if (textLower.contains("mild headache") || 
-            (textLower.contains("headache") && textLower.contains("mild"))) {
-            return "SelfCare";
-        }
-        if (textLower.contains("runny nose") || textLower.contains("sore throat")) {
-            return "SelfCare";
-        }
-        
-        // Appointment  
-        if (textLower.contains("recurring") || textLower.contains("weeks") ||
-            textLower.contains("persistent") || textLower.contains("chronic")) {
-            return "Appointment";
-        }
-        
-        // Default by severity
-        if (textLower.contains("severe")) {
-            return "Emergency";
-        } else if (textLower.contains("mild")) {
-            return "SelfCare";
-        }
-        
-        return "Appointment";
+    private ChatResponse createNonMedicalResponse(String sessionId) {
+        return new ChatResponse(
+            sessionId,
+            "⚠️ I'm a medical triage assistant designed to help with health symptoms and medical concerns.\n\n" +
+            "Please describe your medical symptoms, such as:\n" +
+            "• Pain, discomfort, or unusual sensations\n" +
+            "• Changes in how you feel physically\n" +
+            "• Health concerns or symptoms you're experiencing\n\n" +
+            "Examples: 'I have chest pain', 'headache for 3 days', 'fever and cough'",
+            "NonMedical",
+            false,
+            java.util.List.of(),
+            "This system is designed for medical symptom assessment only."
+        );
     }
 
-    private String generateResponse(String originalText, String classification, String textLower) {
-        switch (classification) {
-            case "Emergency":
-                return generateEmergencyResponse(originalText, textLower);
-            case "SelfCare":
-                return generateSelfCareResponse(originalText, textLower);
-            case "Appointment":
-                return generateAppointmentResponse(originalText, textLower);
-            default:
-                return "Please consult with a healthcare professional.";
-        }
-    }
-
-    private String generateEmergencyResponse(String symptoms, String textLower) {
-        StringBuilder response = new StringBuilder();
-        response.append("🚨 EMERGENCY MEDICAL ATTENTION REQUIRED\n\n");
-        response.append("Based on your symptoms: ").append(symptoms).append("\n\n");
-        response.append("IMMEDIATE ACTIONS:\n");
-        response.append("⚡ Call 911 or emergency services immediately\n");
-        response.append("⚡ Do NOT drive yourself - call ambulance if needed\n");
-        
-        if (textLower.contains("chest")) {
-            response.append("⚡ If chest pain: Take aspirin if not allergic\n");
-        }
-        if (textLower.contains("breathing") || textLower.contains("breath")) {
-            response.append("⚡ If breathing difficulty: Sit upright, loosen clothing\n");
-        }
-        if (textLower.contains("stomach") || textLower.contains("abdominal")) {
-            response.append("⚡ Do not eat or drink anything\n");
-        }
-        
-        response.append("\nWHY THIS IS URGENT:\n");
-        if (textLower.contains("chest") && textLower.contains("breath")) {
-            response.append("Chest pain with breathing difficulties may indicate heart attack or pulmonary embolism.");
-        } else if (textLower.contains("chest")) {
-            response.append("Severe chest pain may indicate heart attack or cardiac emergency.");
-        } else if (textLower.contains("stomach")) {
-            response.append("Severe abdominal pain may indicate appendicitis or surgical emergency.");
-        } else {
-            response.append("These symptoms may indicate a serious medical condition.");
-        }
-        
-        response.append("\n\n⚠️ This is a medical emergency - seek care immediately!");
-        return response.toString();
-    }
-
-    private String generateSelfCareResponse(String symptoms, String textLower) {
-        StringBuilder response = new StringBuilder();
-        response.append("💡 SELF-CARE RECOMMENDATIONS\n\n");
-        response.append("For your symptoms: ").append(symptoms).append("\n\n");
-        response.append("HOME CARE GUIDELINES:\n");
-        response.append("🌟 Get plenty of rest and sleep\n");
-        response.append("🌟 Stay well hydrated\n");
-        
-        if (textLower.contains("headache")) {
-            response.append("🌟 Try cold/warm compress on head\n");
-            response.append("🌟 Rest in quiet, dark room\n");
-        } else if (textLower.contains("throat")) {
-            response.append("🌟 Gargle with warm salt water\n");
-            response.append("🌟 Use throat lozenges\n");
-        }
-        
-        response.append("🌟 Consider over-the-counter remedies (follow directions)\n");
-        response.append("\nSEEK CARE IF:\n");
-        response.append("• Symptoms worsen or persist beyond 5 days\n");
-        response.append("• Fever exceeds 103°F\n");
-        response.append("• New concerning symptoms develop\n");
-        
-        return response.toString();
-    }
-
-    private String generateAppointmentResponse(String symptoms, String textLower) {
-        StringBuilder response = new StringBuilder();
-        response.append("📅 MEDICAL APPOINTMENT RECOMMENDED\n\n");
-        response.append("For your symptoms: ").append(symptoms).append("\n\n");
-        response.append("NEXT STEPS:\n");
-        response.append("📞 Contact your primary care physician within 1-2 weeks\n");
-        response.append("📞 Consider urgent care if no regular doctor\n");
-        
-        response.append("\nBEFORE APPOINTMENT:\n");
-        response.append("📝 Document symptoms: onset, frequency, severity\n");
-        response.append("📝 Note what makes symptoms better/worse\n");
-        response.append("📝 List current medications\n");
-        
-        if (textLower.contains("pain") && textLower.contains("weeks")) {
-            response.append("📝 Keep pain diary with triggers and patterns\n");
-        }
-        
-        response.append("\nSEEK URGENT CARE IF:\n");
-        response.append("• Symptoms suddenly worsen\n");
-        response.append("• Fever develops over 101°F\n");
-        response.append("• Situation becomes concerning\n");
-        
-        return response.toString();
-    }
-
-    private java.util.List<SourceRef> getSources(String classification, String textLower) {
-        if (textLower.contains("chest")) {
-            return java.util.List.of(
-                new SourceRef("CDC", "https://www.cdc.gov/heartdisease/heart_attack.htm", 95.0)
-            );
-        } else if (textLower.contains("stomach")) {
-            return java.util.List.of(
-                new SourceRef("Mayo Clinic", "https://www.mayoclinic.org/diseases-conditions/abdominal-pain/", 91.0)
-            );
-        } else if (textLower.contains("headache")) {
-            return java.util.List.of(
-                new SourceRef("Mayo Clinic", "https://www.mayoclinic.org/diseases-conditions/tension-headache/", 87.0)
-            );
-        } else if (textLower.contains("back")) {
-            return java.util.List.of(
-                new SourceRef("NHS", "https://www.nhs.uk/conditions/back-pain/", 91.0)
-            );
-        }
-        return java.util.List.of(new SourceRef("CDC", "https://www.cdc.gov/", 80.0));
+    private ChatResponse createErrorResponse(String sessionId) {
+        return new ChatResponse(
+            sessionId,
+            "I apologize, but I'm experiencing technical difficulties processing your request. " +
+            "If this is a medical emergency, please call emergency services immediately (911).\n\n" +
+            "Please try again in a moment, or contact a healthcare professional directly.",
+            "Error",
+            false,
+            java.util.List.of(),
+            "System temporarily unavailable. For emergencies, call emergency services."
+        );
     }
 
     private String generateSessionId() {
@@ -273,6 +187,8 @@ public class HttpServer extends AllDirectives {
         return Http.get(system).newServerAt(host, port).bind(createRoutes())
             .thenApply(binding -> {
                 System.out.println("🌐 WEB SERVER STARTED: http://localhost:" + port);
+                System.out.println("🎭 PHASE 1: Web interface connected to Actor System!");
+                System.out.println("🧪 Test with: 'I have chest pain' to see actor communication");
                 return binding;
             });
     }

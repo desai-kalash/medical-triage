@@ -212,22 +212,16 @@ public class Main {
                 AppointmentActor.create(loggerRef), "appointment-care");
 
             // Initialize triage router
-            ActorRef<TriageCommand> triageRouter = context.spawn(
-                TriageRouterActor.create(llmActor, retrievalActor, loggerRef, 
-                                       emergencyCare, selfCare, appointmentCare), 
-                "triage-router");
+            ActorRef<TriageCommand> uiOrchestrator = context.spawn(
+            TriageRouterActor.create(llmActor, retrievalActor, loggerRef, 
+                           emergencyCare, selfCare, appointmentCare), 
+             "triage-router");
 
             // Initialize console user input handler
             ActorRef<UserInputCommand> userInputRef = context.spawn(
-                UserInputActor.create(triageRouter, loggerRef, sessionActor), 
-                "user-input");
+            UserInputActor.create(uiOrchestrator, loggerRef, sessionActor), 
+            "user-input");
             userInputActor = userInputRef;
-
-            // Initialize UI orchestrator for web interface
-            ActorRef<UICommand> uiOrchestrator = context.spawn(
-                UIOrchestrator.create(retrievalActor, llmActor, loggerRef, 
-                                    emergencyCare, selfCare, appointmentCare),
-                "ui-orchestrator");
 
             loggerRef.tell(new LogEvent("SYSTEM", "MainSystem", 
                 "All actors initialized successfully", "INFO"));
@@ -235,27 +229,29 @@ public class Main {
             // Start HTTP server
             context.getLog().info("🌐 Starting HTTP server...");
             
-            try {
-                HttpServer httpServer = new HttpServer(context.getSystem(), uiOrchestrator);
-                httpServer.start("localhost", 8080)
-                    .whenComplete((binding, throwable) -> {
-                        if (throwable == null) {
-                            System.out.println("\n🌐 ✅ WEB SERVER STARTED SUCCESSFULLY!");
-                            System.out.println("🌐 Open your browser: http://localhost:8080");
-                            System.out.println("🌐 Web interface is now available!");
-                            
-                            loggerRef.tell(new LogEvent("SYSTEM", "HttpServer", 
-                                "Web interface available at http://localhost:8080", "INFO"));
-                        } else {
-                            System.err.println("❌ HTTP Server failed to start: " + throwable.getMessage());
-                            throwable.printStackTrace();
-                        }
-                    });
-                    
-            } catch (Exception e) {
-                System.err.println("❌ HTTP server initialization error: " + e.getMessage());
-                e.printStackTrace();
+            // The complete corrected section in Main.java:
+try {
+    HttpServer httpServer = new HttpServer(context.getSystem(), uiOrchestrator);
+    httpServer.start("localhost", 8080)
+        .whenComplete((binding, throwable) -> {
+            if (throwable == null) {
+                System.out.println("\n🌐 ✅ WEB SERVER STARTED SUCCESSFULLY!");
+                System.out.println("🌐 Open your browser: http://localhost:8080");
+                System.out.println("🌐 Web interface now connected to FULL ACTOR SYSTEM!");
+                System.out.println("🤖 Features: LLM + Vector DB + Specialized Care Actors");
+                
+                loggerRef.tell(new LogEvent("SYSTEM", "HttpServer", 
+                    "Web interface connected to actor system at http://localhost:8080", "INFO"));
+            } else {
+                System.err.println("❌ HTTP Server failed to start: " + throwable.getMessage());
+                throwable.printStackTrace();
             }
+        });
+        
+} catch (Exception e) {
+    System.err.println("❌ HTTP server initialization error: " + e.getMessage());
+    e.printStackTrace();
+}
 
             // Mark system as ready
             systemReady = true;
