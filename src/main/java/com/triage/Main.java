@@ -213,9 +213,9 @@ public class Main {
 
             // Initialize triage router
             ActorRef<TriageCommand> uiOrchestrator = context.spawn(
-            TriageRouterActor.create(llmActor, retrievalActor, loggerRef, 
-                           emergencyCare, selfCare, appointmentCare), 
-             "triage-router");
+    TriageRouterActor.create(llmActor, retrievalActor, loggerRef, 
+                           emergencyCare, selfCare, appointmentCare, sessionActor), 
+    "triage-router");
 
             // Initialize console user input handler
             ActorRef<UserInputCommand> userInputRef = context.spawn(
