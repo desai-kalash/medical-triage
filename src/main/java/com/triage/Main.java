@@ -11,6 +11,7 @@ import java.util.Scanner;
 /**
  * Medical Triage Assistant - Main with Web Interface
  * Starts both console and web interfaces
+ * UPDATED: Now supports both single-node and cluster modes
  */
 public class Main {
     
@@ -186,7 +187,8 @@ public class Main {
         System.out.println("─".repeat(60));
     }
 
-    private static Behavior<Void> createWebEnabledBehavior() {
+    // CHANGED: Made public for cluster access
+    public static Behavior<Void> createWebEnabledBehavior() {
         return Behaviors.setup(context -> {
             context.getLog().info("🚀 Initializing Medical Triage Assistant with Web + Console...");
             
@@ -213,14 +215,14 @@ public class Main {
 
             // Initialize triage router
             ActorRef<TriageCommand> uiOrchestrator = context.spawn(
-    TriageRouterActor.create(llmActor, retrievalActor, loggerRef, 
-                           emergencyCare, selfCare, appointmentCare, sessionActor), 
-    "triage-router");
+                TriageRouterActor.create(llmActor, retrievalActor, loggerRef, 
+                                       emergencyCare, selfCare, appointmentCare, sessionActor), 
+                "triage-router");
 
             // Initialize console user input handler
             ActorRef<UserInputCommand> userInputRef = context.spawn(
-            UserInputActor.create(uiOrchestrator, loggerRef, sessionActor), 
-            "user-input");
+                UserInputActor.create(uiOrchestrator, loggerRef, sessionActor), 
+                "user-input");
             userInputActor = userInputRef;
 
             loggerRef.tell(new LogEvent("SYSTEM", "MainSystem", 
@@ -229,34 +231,115 @@ public class Main {
             // Start HTTP server
             context.getLog().info("🌐 Starting HTTP server...");
             
-            // The complete corrected section in Main.java:
-try {
-    HttpServer httpServer = new HttpServer(context.getSystem(), uiOrchestrator);
-    httpServer.start("localhost", 8080)
-        .whenComplete((binding, throwable) -> {
-            if (throwable == null) {
-                System.out.println("\n🌐 ✅ WEB SERVER STARTED SUCCESSFULLY!");
-                System.out.println("🌐 Open your browser: http://localhost:8080");
-                System.out.println("🌐 Web interface now connected to FULL ACTOR SYSTEM!");
-                System.out.println("🤖 Features: LLM + Vector DB + Specialized Care Actors");
-                
-                loggerRef.tell(new LogEvent("SYSTEM", "HttpServer", 
-                    "Web interface connected to actor system at http://localhost:8080", "INFO"));
-            } else {
-                System.err.println("❌ HTTP Server failed to start: " + throwable.getMessage());
-                throwable.printStackTrace();
+            try {
+                HttpServer httpServer = new HttpServer(context.getSystem(), uiOrchestrator);
+                httpServer.start("localhost", 8080)
+                    .whenComplete((binding, throwable) -> {
+                        if (throwable == null) {
+                            System.out.println("\n🌐 ✅ WEB SERVER STARTED SUCCESSFULLY!");
+                            System.out.println("🌐 Open your browser: http://localhost:8080");
+                            System.out.println("🌐 Web interface now connected to FULL ACTOR SYSTEM!");
+                            System.out.println("🤖 Features: LLM + Vector DB + Specialized Care Actors");
+                            
+                            loggerRef.tell(new LogEvent("SYSTEM", "HttpServer", 
+                                "Web interface connected to actor system at http://localhost:8080", "INFO"));
+                        } else {
+                            System.err.println("❌ HTTP Server failed to start: " + throwable.getMessage());
+                            throwable.printStackTrace();
+                        }
+                    });
+                    
+            } catch (Exception e) {
+                System.err.println("❌ HTTP server initialization error: " + e.getMessage());
+                e.printStackTrace();
             }
-        });
-        
-} catch (Exception e) {
-    System.err.println("❌ HTTP server initialization error: " + e.getMessage());
-    e.printStackTrace();
-}
 
             // Mark system as ready
             systemReady = true;
             
             context.getLog().info("✅ Medical Triage Assistant ready - Console + Web");
+
+            return Behaviors.empty();
+        });
+    }
+
+    /**
+     * ADDED: Cluster-enabled behavior - optionally disables web interface on service nodes
+     * This method enables true multi-node deployment while preserving all functionality
+     */
+    public static Behavior<Void> createClusterEnabledBehavior(boolean enableWebInterface) {
+        return Behaviors.setup(context -> {
+            context.getLog().info("🚀 Initializing Medical Triage Assistant - Cluster Node (Web: {})", enableWebInterface);
+            
+            // Initialize core infrastructure actors (identical to original)
+            ActorRef<LogCommand> loggerRef = context.spawn(LoggerActor.create(), "logger");
+            logger = loggerRef;
+            
+            ActorRef<SessionCommand> sessionActor = context.spawn(
+                UserSessionActor.create(loggerRef), "session-manager");
+
+            // Initialize processing actors
+            ActorRef<RetrievalCommand> retrievalActor = context.spawn(
+                RetrievalActor.create(loggerRef), "retrieval");
+            ActorRef<LLMCommand> llmActor = context.spawn(
+                LLMActor.create(loggerRef), "llm");
+
+            // Initialize specialized care actors
+            ActorRef<CareCommand> emergencyCare = context.spawn(
+                EmergencyCareActor.create(loggerRef), "emergency-care");
+            ActorRef<CareCommand> selfCare = context.spawn(
+                SelfCareActor.create(loggerRef), "self-care");  
+            ActorRef<CareCommand> appointmentCare = context.spawn(
+                AppointmentActor.create(loggerRef), "appointment-care");
+
+            // Initialize triage router (central orchestrator)
+            ActorRef<TriageCommand> uiOrchestrator = context.spawn(
+                TriageRouterActor.create(llmActor, retrievalActor, loggerRef, 
+                                       emergencyCare, selfCare, appointmentCare, sessionActor), 
+                "triage-router");
+
+            // Initialize console user input handler
+            ActorRef<UserInputCommand> userInputRef = context.spawn(
+                UserInputActor.create(uiOrchestrator, loggerRef, sessionActor), 
+                "user-input");
+            userInputActor = userInputRef;
+
+            loggerRef.tell(new LogEvent("SYSTEM", "ClusterNode", 
+                "All actors initialized successfully on cluster node", "INFO"));
+
+            // Only start web server on primary node (port 2551)
+            if (enableWebInterface) {
+                context.getLog().info("🌐 Starting HTTP server on primary cluster node...");
+                
+                try {
+                    HttpServer httpServer = new HttpServer(context.getSystem(), uiOrchestrator);
+                    httpServer.start("localhost", 8080)
+                        .whenComplete((binding, throwable) -> {
+                            if (throwable == null) {
+                                System.out.println("\n🌐 ✅ WEB SERVER STARTED ON PRIMARY CLUSTER NODE!");
+                                System.out.println("🌐 Open your browser: http://localhost:8080");
+                                System.out.println("🌐 Web interface connected to distributed actor system!");
+                                
+                                loggerRef.tell(new LogEvent("SYSTEM", "HttpServer", 
+                                    "Web interface connected to cluster node", "INFO"));
+                            } else {
+                                System.err.println("❌ HTTP Server failed: " + throwable.getMessage());
+                                throwable.printStackTrace();
+                            }
+                        });
+                        
+                } catch (Exception e) {
+                    System.err.println("❌ HTTP server error: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            } else {
+                context.getLog().info("⚙️ Service node - web interface disabled");
+                System.out.println("⚙️ Service node ready - processing medical queries through cluster");
+            }
+
+            // Mark system as ready
+            systemReady = true;
+            context.getLog().info("✅ Medical Triage Cluster Node Ready");
 
             return Behaviors.empty();
         });

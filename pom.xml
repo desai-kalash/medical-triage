@@ -22,10 +22,17 @@
 
   <dependencies>
 
-    <!-- Akka Typed Actor (NO CLUSTER) -->
+    <!-- Akka Typed Actor -->
     <dependency>
       <groupId>com.typesafe.akka</groupId>
       <artifactId>akka-actor-typed_2.13</artifactId>
+      <version>${akka.version}</version>
+    </dependency>
+
+    <!-- ADDED: Akka Cluster Typed for Multi-Node Support -->
+    <dependency>
+      <groupId>com.typesafe.akka</groupId>
+      <artifactId>akka-cluster-typed_2.13</artifactId>
       <version>${akka.version}</version>
     </dependency>
 
@@ -144,11 +151,49 @@
         </configuration>
       </plugin>
 
-      <!-- Plugin to run the main app -->
+      <!-- Plugin to run the main app with multiple execution profiles -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.1.0</version>
+        <executions>
+          <!-- Default execution for Main.java -->
+          <execution>
+            <id>default-cli</id>
+            <goals>
+              <goal>java</goal>
+            </goals>
+            <configuration>
+              <mainClass>com.triage.Main</mainClass>
+            </configuration>
+          </execution>
+          <!-- Cluster execution for ClusterMain.java -->
+          <execution>
+            <id>cluster</id>
+            <goals>
+              <goal>java</goal>
+            </goals>
+            <configuration>
+              <mainClass>com.triage.ClusterMain</mainClass>
+              <arguments>
+                <argument>2551</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <!-- Cluster service node execution -->
+          <execution>
+            <id>cluster-service</id>
+            <goals>
+              <goal>java</goal>
+            </goals>
+            <configuration>
+              <mainClass>com.triage.ClusterMain</mainClass>
+              <arguments>
+                <argument>2552</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
         <configuration>
           <mainClass>com.triage.Main</mainClass>
         </configuration>
