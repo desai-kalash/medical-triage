@@ -113,6 +113,13 @@
       <version>2.3.1</version>
     </dependency>
 
+    <!-- PHASE 2B: JSoup for HTML parsing of medical websites -->
+    <dependency>
+      <groupId>org.jsoup</groupId>
+      <artifactId>jsoup</artifactId>
+      <version>1.17.2</version>
+    </dependency>
+
     <!-- JUnit (for optional testing) -->
     <dependency>
       <groupId>junit</groupId>

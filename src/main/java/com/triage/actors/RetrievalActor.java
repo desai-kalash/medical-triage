@@ -10,17 +10,21 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Enhanced RetrievalActor - Vector Database Medical Knowledge Retrieval
- * Uses Lucene for semantic similarity search of medical knowledge chunks
- * Demonstrates ASK pattern response handling with enriched medical context
+ * PHASE 2B: Enhanced RetrievalActor - Hybrid Medical Knowledge Retrieval
+ * Combines local vector database with live medical data fetching
+ * Provides comprehensive coverage for any medical symptom
  */
 public class RetrievalActor extends AbstractBehavior<RetrievalCommand> {
 
     private final ActorRef<LogCommand> logger;
     private final RetrievalConfig config;
     private final EmbeddingsClient embedClient;
+    private final MedicalInfoFetcher medicalFetcher;  // PHASE 2B: Live data fetcher
     private LuceneVectorStore vectorStore;
     private boolean indexReady = false;
+    
+    // PHASE 2B: Similarity threshold for live fetching
+    private static final double LIVE_FETCH_THRESHOLD = 0.60;
 
     public static Behavior<RetrievalCommand> create(ActorRef<LogCommand> logger) {
         return Behaviors.setup(context -> new RetrievalActor(context, logger));
@@ -30,8 +34,10 @@ public class RetrievalActor extends AbstractBehavior<RetrievalCommand> {
         super(context);
         this.logger = logger;
         this.config = new RetrievalConfig();
+        this.medicalFetcher = new MedicalInfoFetcher();  // PHASE 2B: Initialize live fetcher
         
         getContext().getLog().info("🔍 RetrievalActor initializing with config: {}", config);
+        getContext().getLog().info("🌐 PHASE 2B: Hybrid retrieval enabled (local + live medical data)");
         
         // Initialize embedding client based on config
         switch (config.provider.toUpperCase()) {
@@ -94,43 +100,112 @@ public class RetrievalActor extends AbstractBehavior<RetrievalCommand> {
     public Receive<RetrievalCommand> createReceive() {
         return newReceiveBuilder()
                 .onMessage(Retrieve.class, this::onRetrieve)
-                .onSignal(PostStop.class, this::onPostStop)  // Add signal handler here
+                .onSignal(PostStop.class, this::onPostStop)
                 .build();
     }
 
+    /**
+     * PHASE 2B: Enhanced retrieval with hybrid local + live fetching
+     */
     private Behavior<RetrievalCommand> onRetrieve(Retrieve msg) {
         getContext().getLog().info("🔍 Vector search for session [{}]: {}", 
             msg.sessionId, msg.query);
         
         logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
-            "Starting semantic similarity search", "INFO"));
+            "Starting hybrid retrieval (local + live)", "INFO"));
 
         if (!indexReady || vectorStore == null) {
             logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
-                "Vector index not ready - using fallback", "WARNING"));
+                "Vector index not ready - using live fallback only", "WARNING"));
             
-            // Return empty result if index not ready
-            msg.replyTo.tell(new Retrieved(msg.sessionId, Collections.emptyList(), false));
+            // If local index not ready, try live fetching
+            List<RetrievedChunk> liveFallback = fetchLiveMedicalData(msg.query, msg.sessionId);
+            msg.replyTo.tell(new Retrieved(msg.sessionId, liveFallback, !liveFallback.isEmpty()));
             return this;
         }
 
         try {
+            // PHASE 2B: STEP 1 - Search local corpus first (fast)
+            List<RetrievedChunk> localResults = searchLocalCorpus(msg.query, msg.topK, msg.sessionId);
+            
+            // PHASE 2B: STEP 2 - Evaluate local results quality
+            double bestLocalScore = localResults.isEmpty() ? 0.0 : 
+                localResults.stream().mapToDouble(c -> c.score).max().orElse(0.0);
+            
+            List<RetrievedChunk> finalResults = new ArrayList<>();
+            
+            // PHASE 2B: STEP 3 - Decision: Use local or fetch live data
+            if (bestLocalScore >= LIVE_FETCH_THRESHOLD) {
+                // Good local match - use local results
+                finalResults.addAll(localResults);
+                logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
+                    "Using local corpus - good match found (best score: " + String.format("%.3f", bestLocalScore) + ")", "INFO"));
+                
+            } else {
+                // Poor local match - fetch live medical data
+                logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
+                    "Local match insufficient (best score: " + String.format("%.3f", bestLocalScore) + 
+                    ") - fetching live medical data", "INFO"));
+                
+                List<RetrievedChunk> liveResults = fetchLiveMedicalData(msg.query, msg.sessionId);
+                
+                if (!liveResults.isEmpty()) {
+                    // Use live results (higher quality and relevance)
+                    finalResults.addAll(liveResults);
+                    logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
+                        "Live medical data retrieved: " + liveResults.size() + " authoritative sources", "INFO"));
+                    
+                    // Log the improvement in relevance
+                    double bestLiveScore = liveResults.stream().mapToDouble(c -> c.score).max().orElse(0.0);
+                    logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
+                        "Relevance improved: " + String.format("%.3f", bestLocalScore) + " → " + 
+                        String.format("%.3f", bestLiveScore), "INFO"));
+                    
+                } else {
+                    // Live fetch failed - fallback to local results
+                    finalResults.addAll(localResults);
+                    logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
+                        "Live fetch failed - using local results as fallback", "WARNING"));
+                }
+            }
+            
+            // PHASE 2B: STEP 4 - Log comprehensive retrieval summary
+            logRetrievalSummary(msg.sessionId, finalResults);
+            
+            // Return results to TriageRouterActor
+            msg.replyTo.tell(new Retrieved(msg.sessionId, finalResults, true));
+            
+        } catch (Exception e) {
+            getContext().getLog().error("❌ Hybrid retrieval failed for session [{}]: {}", 
+                msg.sessionId, e.getMessage());
+            
+            logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
+                "Hybrid retrieval system error: " + e.getMessage(), "ERROR"));
+            
+            // Return failure result
+            msg.replyTo.tell(new Retrieved(msg.sessionId, Collections.emptyList(), false));
+        }
+
+        return this;
+    }
+    
+    /**
+     * PHASE 2B: Search local vector corpus (existing logic enhanced)
+     */
+    private List<RetrievedChunk> searchLocalCorpus(String query, int topK, String sessionId) {
+        try {
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "Searching local vector corpus", "DEBUG"));
+            
             // Generate query embedding
-            logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
-                "Generating query embedding", "DEBUG"));
-            
-            float[] queryVector = embedClient.embed(msg.query);
-            
-            logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
-                "Query embedded (" + queryVector.length + "D), searching corpus", "DEBUG"));
+            float[] queryVector = embedClient.embed(query);
             
             // Search similar chunks using vector similarity
             List<LuceneVectorStore.RetrievedDoc> searchResults = 
-                vectorStore.search(queryVector, msg.topK);
+                vectorStore.search(queryVector, topK);
             
-            // Convert to message format and apply similarity filtering
+            // Convert to RetrievedChunk format
             List<RetrievedChunk> chunks = searchResults.stream()
-                .filter(doc -> doc.score >= config.minSimilarity)
                 .map(doc -> new RetrievedChunk(
                     doc.id, 
                     doc.text, 
@@ -140,64 +215,140 @@ public class RetrievalActor extends AbstractBehavior<RetrievalCommand> {
                     doc.score))
                 .collect(Collectors.toList());
             
-            // Ensure we return at least 1 chunk if available (even if below threshold)
-            if (chunks.isEmpty() && !searchResults.isEmpty()) {
-                LuceneVectorStore.RetrievedDoc bestMatch = searchResults.get(0);
-                chunks.add(new RetrievedChunk(
-                    bestMatch.id, 
-                    bestMatch.text, 
-                    bestMatch.source_name, 
-                    bestMatch.source_url, 
-                    bestMatch.category, 
-                    bestMatch.score));
-                
-                logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
-                    "Low similarity scores - using best available match (score: " + 
-                    String.format("%.3f", bestMatch.score) + ")", "WARNING"));
-            }
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "Local corpus search completed: " + chunks.size() + " chunks found", "DEBUG"));
             
-            // Log retrieval results with detailed information
-            if (!chunks.isEmpty()) {
-                String chunkInfo = chunks.stream()
-                    .map(c -> String.format("%s:%s(%.3f)", c.category, c.id, c.score))
-                    .collect(Collectors.joining(", "));
-                
-                logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
-                    "Retrieved " + chunks.size() + " chunks: " + chunkInfo, "INFO"));
-                
-                // Log sources used for traceability
-                String sources = chunks.stream()
-                    .map(c -> c.sourceName)
-                    .distinct()
-                    .collect(Collectors.joining(", "));
-                
-                logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
-                    "Medical sources: " + sources, "DEBUG"));
-            } else {
-                logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
-                    "No relevant medical knowledge found above similarity threshold", "WARNING"));
-            }
-            
-            msg.replyTo.tell(new Retrieved(msg.sessionId, chunks, true));
+            return chunks;
             
         } catch (Exception e) {
-            getContext().getLog().error("❌ Vector search failed for session [{}]: {}", 
-                msg.sessionId, e.getMessage());
-            
-            logger.tell(new LogEvent(msg.sessionId, "RetrievalActor", 
-                "Vector search failed: " + e.getMessage(), "ERROR"));
-            
-            // Return failure result
-            msg.replyTo.tell(new Retrieved(msg.sessionId, Collections.emptyList(), false));
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "Local corpus search failed: " + e.getMessage(), "ERROR"));
+            return Collections.emptyList();
         }
-
-        return this;
+    }
+    
+    /**
+     * PHASE 2B: Fetch live medical data from trusted sources
+     */
+    private List<RetrievedChunk> fetchLiveMedicalData(String query, String sessionId) {
+        try {
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "Initiating live medical data fetch", "INFO"));
+            
+            // Extract primary symptom for targeted fetching
+            String primarySymptom = medicalFetcher.extractPrimarySymptom(query);
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "Primary symptom identified: " + primarySymptom, "DEBUG"));
+            
+            // Fetch from multiple trusted medical sources
+            List<RetrievedChunk> liveChunks = medicalFetcher.fetchMedicalInfo(primarySymptom, sessionId);
+            
+            if (!liveChunks.isEmpty()) {
+                // Log successful live retrieval
+                String liveSourceInfo = liveChunks.stream()
+                    .map(c -> c.sourceName + "(" + String.format("%.2f", c.score) + ")")
+                    .collect(Collectors.joining(", "));
+                
+                logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                    "Live medical sources: " + liveSourceInfo, "INFO"));
+                
+                // Cache best results for future use (optional)
+                cacheBestLiveResults(liveChunks, primarySymptom, sessionId);
+            }
+            
+            return liveChunks;
+            
+        } catch (Exception e) {
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "Live medical data fetch failed: " + e.getMessage(), "ERROR"));
+            return Collections.emptyList();
+        }
+    }
+    
+    /**
+     * PHASE 2B: Cache high-quality live results for future use
+     */
+    private void cacheBestLiveResults(List<RetrievedChunk> liveChunks, String symptom, String sessionId) {
+        try {
+            // Find the highest quality live result
+            Optional<RetrievedChunk> bestResult = liveChunks.stream()
+                .filter(c -> c.score > 0.85)  // Only cache high-quality results
+                .max(Comparator.comparingDouble(c -> c.score));
+            
+            if (bestResult.isPresent()) {
+                RetrievedChunk chunk = bestResult.get();
+                logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                    "Caching high-quality live result: " + chunk.sourceName + " (score: " + 
+                    String.format("%.2f", chunk.score) + ")", "INFO"));
+                
+                // TODO: In production, append to corpus.jsonl for persistent caching
+                // For now, just log the caching action
+                System.out.println("💾 PHASE 2B: Would cache " + chunk.sourceName + 
+                    " data for '" + symptom + "' (score: " + String.format("%.2f", chunk.score) + ")");
+            }
+        } catch (Exception e) {
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "Caching attempt failed: " + e.getMessage(), "WARNING"));
+        }
+    }
+    
+    /**
+     * PHASE 2B: Comprehensive retrieval summary logging
+     */
+    private void logRetrievalSummary(String sessionId, List<RetrievedChunk> finalResults) {
+        if (finalResults.isEmpty()) {
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "No medical knowledge retrieved from any source", "WARNING"));
+            return;
+        }
+        
+        // Separate local vs live results
+        List<RetrievedChunk> localChunks = finalResults.stream()
+            .filter(c -> !c.id.startsWith("live_"))
+            .collect(Collectors.toList());
+            
+        List<RetrievedChunk> liveChunks = finalResults.stream()
+            .filter(c -> c.id.startsWith("live_"))
+            .collect(Collectors.toList());
+        
+        // Log detailed breakdown
+        if (!localChunks.isEmpty()) {
+            String localInfo = localChunks.stream()
+                .map(c -> String.format("%s(%.3f)", c.id, c.score))
+                .collect(Collectors.joining(", "));
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "Local corpus results: " + localInfo, "INFO"));
+        }
+        
+        if (!liveChunks.isEmpty()) {
+            String liveInfo = liveChunks.stream()
+                .map(c -> String.format("%s(%.3f)", c.sourceName, c.score))
+                .collect(Collectors.joining(", "));
+            logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+                "Live medical data: " + liveInfo, "INFO"));
+        }
+        
+        // Overall summary
+        String allSources = finalResults.stream()
+            .map(c -> c.sourceName)
+            .distinct()
+            .collect(Collectors.joining(", "));
+        
+        double avgScore = finalResults.stream()
+            .mapToDouble(c -> c.score)
+            .average()
+            .orElse(0.0);
+            
+        logger.tell(new LogEvent(sessionId, "RetrievalActor", 
+            "Hybrid retrieval completed - Sources: " + allSources + 
+            ", Avg relevance: " + String.format("%.3f", avgScore), "INFO"));
     }
 
     /**
-     * Handle actor shutdown - cleanup vector store resources
+     * Handle actor shutdown - cleanup resources
      */
     private Behavior<RetrievalCommand> onPostStop(PostStop signal) {
+        // Cleanup vector store
         if (vectorStore != null) {
             try {
                 vectorStore.close();
@@ -206,6 +357,17 @@ public class RetrievalActor extends AbstractBehavior<RetrievalCommand> {
                 getContext().getLog().warn("⚠️ Error closing vector store: {}", e.getMessage());
             }
         }
+        
+        // Cleanup live fetcher
+        if (medicalFetcher != null) {
+            try {
+                medicalFetcher.close();
+                getContext().getLog().info("🌐 Medical info fetcher closed successfully");
+            } catch (Exception e) {
+                getContext().getLog().warn("⚠️ Error closing medical fetcher: {}", e.getMessage());
+            }
+        }
+        
         return this;
     }
 }
