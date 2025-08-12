@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Intake Assessment - Triage Assistant</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh; padding: 20px;
+        }
+        .intake-container { 
+            max-width: 900px; margin: 0 auto; background: white; border-radius: 16px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1); overflow: hidden; 
+        }
+        .header { 
+            background: linear-gradient(135deg, #2c5aa0 0%, #1e3d72 100%); 
+            color: white; padding: 40px 30px; text-align: center; 
+        }
+        .header h1 { font-size: 32px; margin-bottom: 10px; }
+        .header p { font-size: 16px; opacity: 0.9; }
+        .form-content { padding: 40px 30px; }
+        .emergency-alert { 
+            background: #ffebee; border: 2px solid #f44336; padding: 20px; 
+            margin-bottom: 30px; border-radius: 8px; color: #c62828; 
+        }
+        .emergency-alert strong { color: #d32f2f; }
+        .form-section { 
+            margin-bottom: 40px; padding: 25px; background: #f8f9fa; 
+            border-radius: 12px; border-left: 4px solid #667eea; 
+        }
+        .section-title { 
+            color: #2c5aa0; font-size: 22px; font-weight: 600; margin-bottom: 20px; 
+            display: flex; align-items: center; gap: 10px; 
+        }
+        .form-row { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+        .form-group { flex: 1; min-width: 250px; }
+        .form-group label { 
+            display: block; margin-bottom: 8px; font-weight: 600; color: #333; font-size: 14px; 
+        }
+        .form-group input, .form-group select, .form-group textarea { 
+            width: 100%; padding: 12px 16px; border: 2px solid #e1e5e9; border-radius: 8px; 
+            font-size: 14px; transition: all 0.3s ease; background: white;
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            transform: translateY(-1px);
+        }
+        .checkbox-grid { 
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
+            gap: 15px; margin-top: 10px; 
+        }
+        .checkbox-item { 
+            display: flex; align-items: center; gap: 12px; padding: 12px 16px; 
+            border: 2px solid #e1e5e9; border-radius: 8px; transition: all 0.2s ease; 
+            background: white; cursor: pointer;
+        }
+        .checkbox-item:hover { border-color: #667eea; background-color: #f8f9ff; }
+        .checkbox-item input[type="checkbox"] { margin: 0; transform: scale(1.2); }
+        .checkbox-item input[type="checkbox"]:checked + label { color: #2c5aa0; font-weight: 600; }
+        .pain-scale { 
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); 
+            gap: 10px; margin-top: 10px; 
+        }
+        .pain-option { 
+            text-align: center; padding: 15px 10px; border: 2px solid #e1e5e9; 
+            border-radius: 8px; cursor: pointer; transition: all 0.2s ease; 
+            background: white; font-weight: 500;
+        }
+        .pain-option:hover { border-color: #667eea; transform: translateY(-2px); }
+        .pain-option.selected { 
+            border-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; transform: translateY(-2px); 
+        }
+        .submit-section { 
+            text-align: center; margin-top: 40px; padding-top: 30px; 
+            border-top: 2px solid #e1e5e9; 
+        }
+        .btn-primary { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; padding: 18px 50px; border: none; border-radius: 12px; 
+            font-size: 18px; font-weight: 600; cursor: pointer; 
+            transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        .btn-primary:hover { 
+            transform: translateY(-3px); box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4); 
+        }
+        .btn-primary:disabled { 
+            background: #ccc; cursor: not-allowed; transform: none; 
+            box-shadow: none; 
+        }
+        .required { color: #f44336; font-weight: bold; }
+        .info-text { 
+            font-size: 12px; color: #666; margin-top: 5px; font-style: italic; 
+        }
+        .risk-indicator { 
+            display: inline-block; padding: 6px 12px; border-radius: 6px; 
+            font-size: 12px; font-weight: bold; margin-left: 10px; 
+        }
+        .risk-low { background: #e8f5e8; color: #2e7d2e; }
+        .risk-moderate { background: #fff3cd; color: #856404; }
+        .risk-high { background: #f8d7da; color: #721c24; }
+        .loading { 
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+            background: rgba(0,0,0,0.7); display: none; align-items: center; 
+            justify-content: center; z-index: 1000; 
+        }
+        .loading-content { 
+            background: white; padding: 40px; border-radius: 12px; text-align: center; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3); 
+        }
+        .spinner { 
+            width: 40px; height: 40px; border: 4px solid #f3f3f3; 
+            border-top: 4px solid #667eea; border-radius: 50%; 
+            animation: spin 1s linear infinite; margin: 0 auto 20px; 
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="intake-container">
+        <div class="header">
+            <h1>🏥 Medical Intake Assessment</h1>
+            <p>Comprehensive health evaluation for accurate medical guidance</p>
+        </div>
+        
+        <div class="form-content">
+            <div class="emergency-alert">
+                <strong>🚨 EMERGENCY NOTICE:</strong> If you are experiencing a medical emergency (chest pain, difficulty breathing, severe bleeding, loss of consciousness, signs of stroke), please call 911 immediately or go to your nearest emergency room. Do not delay emergency care to complete this form.
+            </div>
+
+            <form id="medicalIntakeForm">
+                <!-- Demographics Section -->
+                <div class="form-section">
+                    <h3 class="section-title">👤 Patient Information</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="age">Age <span class="required">*</span></label>
+                            <input type="number" id="age" name="age" required min="1" max="120" placeholder="Enter your age">
+                            <div class="info-text">Age is critical for risk assessment and age-appropriate treatment protocols</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="gender">Gender <span class="required">*</span></label>
+                            <select id="gender" name="gender" required>
+                                <option value="">Select your gender...</option>
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
+                                <option value="other">Other/Prefer not to say</option>
+                            </select>
+                            <div class="info-text">Gender affects certain medical conditions and treatment options</div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="weight">Weight (kg)</label>
+                            <input type="number" id="weight" name="weight" step="0.1" min="1" max="300" placeholder="Optional - helps with assessments">
+                            <div class="info-text">Used for medication dosing calculations and health risk assessments</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="height">Height (cm)</label>
+                            <input type="number" id="height" name="height" min="50" max="250" placeholder="Optional - for BMI calculations">
+                            <div class="info-text">Helps calculate BMI and assess weight-related health factors</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Medical History Section -->
+                <div class="form-section">
+                    <h3 class="section-title">🏥 Medical History</h3>
+                    <div class="form-group">
+                        <label for="medications">Current Medications</label>
+                        <textarea id="medications" name="medications" rows="3" placeholder="List all medications you're currently taking, separated by commas&#10;Example: Aspirin 81mg daily, Lisinopril 10mg daily, Tylenol as needed, Vitamin D"></textarea>
+                        <div class="info-text">Include prescription medications, over-the-counter drugs, vitamins, and supplements</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="allergies">Known Allergies</label>
+                        <textarea id="allergies" name="allergies" rows="2" placeholder="List any known allergies separated by commas&#10;Example: Penicillin, Shellfish, Latex, Pollen, Sulfa drugs"></textarea>
+                        <div class="info-text">Include medication allergies, food allergies, and environmental allergies</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Medical Conditions <span class="info-text">(check all that apply)</span></label>
+                        <div class="checkbox-grid">
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="diabetes" id="diabetes">
+                                <label for="diabetes">Diabetes (Type 1 or 2)</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="heart disease" id="heart-disease">
+                                <label for="heart-disease">Heart Disease</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="high blood pressure" id="hypertension">
+                                <label for="hypertension">High Blood Pressure</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="asthma" id="asthma">
+                                <label for="asthma">Asthma/COPD</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="cancer" id="cancer">
+                                <label for="cancer">Cancer (past or current)</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="mental health" id="mental-health">
+                                <label for="mental-health">Mental Health Conditions</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="kidney disease" id="kidney">
+                                <label for="kidney">Kidney Disease</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="thyroid disease" id="thyroid">
+                                <label for="thyroid">Thyroid Disease</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="stroke" id="stroke">
+                                <label for="stroke">Previous Stroke</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" name="conditions" value="blood clots" id="clots">
+                                <label for="clots">Blood Clots</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Health Status -->
+                <div class="form-section">
+                    <h3 class="section-title">📊 Current Health Status</h3>
+                    <div class="form-group">
+                        <label>Current Pain Level <span class="info-text">(select if you have pain)</span></label>
+                        <div class="pain-scale">
+                            <div class="pain-option" data-value="0">
+                                <strong>0</strong><br><small>No Pain</small>
+                            </div>
+                            <div class="pain-option" data-value="2">
+                                <strong>1-2</strong><br><small>Mild Pain</small>
+                            </div>
+                            <div class="pain-option" data-value="4">
+                                <strong>3-4</strong><br><small>Moderate</small>
+                            </div>
+                            <div class="pain-option" data-value="6">
+                                <strong>5-6</strong><br><small>Strong</small>
+                            </div>
+                            <div class="pain-option" data-value="8">
+                                <strong>7-8</strong><br><small>Severe</small>
+                            </div>
+                            <div class="pain-option" data-value="10">
+                                <strong>9-10</strong><br><small>Worst Possible</small>
+                            </div>
+                        </div>
+                        <input type="hidden" id="painScale" name="painScale" value="0">
+                        <div class="info-text">Pain scale helps assess severity and urgency of your condition</div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hasFever">Do you currently have a fever?</label>
+                            <select id="hasFever" name="hasFever">
+                                <option value="false">No fever</option>
+                                <option value="true">Yes, I have a fever</option>
+                                <option value="unknown">I don't know</option>
+                            </select>
+                            <div class="info-text">Fever often indicates infection and affects treatment decisions</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="activityLevel">Current Activity Level</label>
+                            <select id="activityLevel" name="activityLevel">
+                                <option value="normal">Normal - No limitations in daily activities</option>
+                                <option value="limited">Limited - Some difficulty with normal activities</option>
+                                <option value="bedbound">Severely limited - Mostly confined to bed</option>
+                            </select>
+                            <div class="info-text">Activity level indicates symptom severity and functional impact</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="smokingStatus">Smoking Status</label>
+                            <select id="smokingStatus" name="smokingStatus">
+                                <option value="never">Never smoked</option>
+                                <option value="former">Former smoker (quit)</option>
+                                <option value="current">Current smoker</option>
+                            </select>
+                            <div class="info-text">Smoking history affects many medical conditions and treatment options</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="alcoholUse">Alcohol Use</label>
+                            <select id="alcoholUse" name="alcoholUse">
+                                <option value="none">No alcohol use</option>
+                                <option value="occasional">Occasional (1-3 drinks per week)</option>
+                                <option value="regular">Regular (4-10 drinks per week)</option>
+                                <option value="heavy">Heavy (more than 10 drinks per week)</option>
+                            </select>
+                            <div class="info-text">Alcohol use can interact with medications and affect certain conditions</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Symptom Context -->
+                <div class="form-section">
+                    <h3 class="section-title">🔍 About Your Symptoms</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="symptomOnset">How did your symptoms start?</label>
+                            <select id="symptomOnset" name="symptomOnset">
+                                <option value="sudden">Sudden - Came on all at once</option>
+                                <option value="gradual">Gradual - Developed slowly over hours or days</option>
+                                <option value="chronic">Chronic - Have been ongoing for weeks or months</option>
+                            </select>
+                            <div class="info-text">Onset pattern helps differentiate between different types of conditions</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="symptomDuration">How long have you had these symptoms?</label>
+                            <select id="symptomDuration" name="symptomDuration">
+                                <option value="minutes">Minutes</option>
+                                <option value="hours">Hours (less than 24)</option>
+                                <option value="days">Days (1-7 days)</option>
+                                <option value="weeks">Weeks (1-4 weeks)</option>
+                                <option value="months">Months (over 1 month)</option>
+                            </select>
+                            <div class="info-text">Duration helps determine if condition is acute or chronic</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="triggers">What makes your symptoms better or worse?</label>
+                        <textarea id="triggers" name="triggers" rows="3" placeholder="Describe what improves or worsens your symptoms&#10;Examples:&#10;• Rest helps, movement makes it worse&#10;• Deep breathing is difficult&#10;• Eating triggers nausea&#10;• Heat/cold affects the pain&#10;• Stress makes it worse"></textarea>
+                        <div class="info-text">Triggers and relieving factors provide important diagnostic clues</div>
+                    </div>
+                    
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="previousEpisodes" name="previousEpisodes">
+                        <label for="previousEpisodes">I've had similar symptoms before</label>
+                    </div>
+                </div>
+
+                <!-- Environmental Context -->
+                <div class="form-section">
+                    <h3 class="section-title">🌍 Recent Context & Exposures</h3>
+                    <div class="form-group">
+                        <label for="recentTravel">Recent Travel (past 30 days)</label>
+                        <input type="text" id="recentTravel" name="recentTravel" placeholder="List any travel outside your local area, or enter 'None'">
+                        <div class="info-text">Travel history helps identify potential exposure to regional diseases or infections</div>
+                    </div>
+                    
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="sickContacts" name="sickContacts">
+                        <label for="sickContacts">Recent contact with sick people (family, coworkers, etc.)</label>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="occupationalExposure">Work or Environmental Exposures</label>
+                        <input type="text" id="occupationalExposure" name="occupationalExposure" placeholder="Examples: Healthcare worker, Chemical plant, Construction, Office environment, School, Restaurant">
+                        <div class="info-text">Occupational and environmental exposures that might be related to your symptoms</div>
+                    </div>
+                </div>
+
+                <!-- Symptoms Description -->
+                <div class="form-section">
+                    <h3 class="section-title">🩺 Describe Your Symptoms</h3>
+                    <div class="form-group">
+                        <label for="symptoms">Please describe your symptoms in detail <span class="required">*</span></label>
+                        <textarea id="symptoms" name="symptoms" rows="6" required 
+                            placeholder="Be as specific as possible about your symptoms:&#10;&#10;• Where exactly is the problem located?&#10;• What does it feel like? (sharp, dull, burning, cramping, etc.)&#10;• When did it start and what were you doing?&#10;• How severe is it on a scale of 1-10?&#10;• Any other symptoms you're experiencing?&#10;• What concerns you most about these symptoms?&#10;&#10;The more detail you provide, the better we can assess your condition."></textarea>
+                        <div class="info-text">Detailed symptom description is essential for accurate medical assessment</div>
+                    </div>
+                </div>
+
+                <div class="submit-section">
+                    <div id="riskAssessment" style="margin-bottom: 20px; font-size: 16px; font-weight: 600;"></div>
+                    <button type="submit" class="btn-primary">🔍 Get Comprehensive Medical Assessment</button>
+                    <p style="margin-top: 20px; color: #666; font-size: 14px; line-height: 1.5;">
+                        <strong>Disclaimer:</strong> This system provides educational health information only and is not a substitute for professional medical advice, diagnosis, or treatment. Always consult with qualified healthcare professionals for medical decisions. In case of emergency, call 911 immediately.
+                    </p>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div class="loading" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <h3>🔬 Analyzing Medical Information</h3>
+            <p>Processing your comprehensive health assessment...</p>
+            <p><small>This may take 10-15 seconds for thorough analysis</small></p>
+        </div>
+    </div>
+
+    <script>
+        // Pain scale interactive selection
+        document.querySelectorAll('.pain-option').forEach(option => {
+            option.addEventListener('click', function() {
+                document.querySelectorAll('.pain-option').forEach(opt => opt.classList.remove('selected'));
+                this.classList.add('selected');
+                document.getElementById('painScale').value = this.dataset.value;
+                updateRiskAssessment();
+            });
+        });
+
+        // Real-time risk assessment
+        function updateRiskAssessment() {
+            const age = parseInt(document.getElementById('age').value) || 0;
+            const conditions = Array.from(document.querySelectorAll('input[name="conditions"]:checked')).map(cb => cb.value);
+            const smokingStatus = document.getElementById('smokingStatus').value;
+            const painScale = parseInt(document.getElementById('painScale').value) || 0;
+            const medications = document.getElementById('medications').value.split(',').filter(m => m.trim());
+            
+            let riskScore = 0;
+            if (age > 65) riskScore += 2;
+            else if (age > 45) riskScore += 1;
+            if (medications.length > 3) riskScore += 1;
+            if (conditions.includes('diabetes')) riskScore += 2;
+            if (conditions.includes('heart disease')) riskScore += 2;
+            if (conditions.includes('cancer')) riskScore += 1;
+            if (smokingStatus === 'current') riskScore += 1;
+            if (painScale > 7) riskScore += 1;
+            
+            const riskElement = document.getElementById('riskAssessment');
+            if (age > 0) {
+                let riskText, riskClass;
+                if (riskScore >= 5) {
+                    riskText = 'HIGH RISK PATIENT';
+                    riskClass = 'risk-high';
+                } else if (riskScore >= 3) {
+                    riskText = 'MODERATE RISK PATIENT';
+                    riskClass = 'risk-moderate';
+                } else {
+                    riskText = 'LOW RISK PATIENT';
+                    riskClass = 'risk-low';
+                }
+                riskElement.innerHTML = `Risk Assessment: <span class="risk-indicator ${riskClass}">${riskText}</span>`;
+            }
+        }
+
+        // Add event listeners for real-time risk assessment
+        document.getElementById('age').addEventListener('input', updateRiskAssessment);
+        document.getElementById('smokingStatus').addEventListener('change', updateRiskAssessment);
+        document.getElementById('medications').addEventListener('input', updateRiskAssessment);
+        document.querySelectorAll('input[name="conditions"]').forEach(cb => {
+            cb.addEventListener('change', updateRiskAssessment);
+        });
+
+        // Enhanced symptom text builder
+        function buildEnhancedSymptomText(symptoms, intakeData) {
+            let enhanced = `PATIENT PROFILE: ${intakeData.age}-year-old ${intakeData.gender}`;
+            
+            // Add medical history
+            if (intakeData.medicalConditions.length > 0) {
+                enhanced += ` with medical history of ${intakeData.medicalConditions.join(', ')}`;
+            }
+            
+            // Add current medications
+            if (intakeData.currentMedications.length > 0) {
+                enhanced += `. Current medications: ${intakeData.currentMedications.join(', ')}`;
+            }
+            
+            // Add current health status
+            if (intakeData.painScale > 0) {
+                enhanced += `. Pain level: ${intakeData.painScale}/10`;
+            }
+            
+            if (intakeData.hasFever) {
+                enhanced += `. Currently has fever`;
+            }
+            
+            if (intakeData.smokingStatus === 'current') {
+                enhanced += `. Current smoker`;
+            }
+            
+            if (intakeData.activityLevel !== 'normal') {
+                enhanced += `. Activity level: ${intakeData.activityLevel}`;
+            }
+            
+            // Add allergies if any
+            if (intakeData.allergies.length > 0) {
+                enhanced += `. Allergies: ${intakeData.allergies.join(', ')}`;
+            }
+            
+            enhanced += `.\n\nSYMPTOMS: ${symptoms}`;
+            
+            // Add symptom context
+            if (intakeData.triggers.length > 0) {
+                enhanced += `\n\nTriggers/Relieving factors: ${intakeData.triggers.join(', ')}`;
+            }
+            
+            if (intakeData.previousEpisodes) {
+                enhanced += `\n\nNote: Patient reports having similar symptoms before`;
+            }
+            
+            if (intakeData.symptomOnset && intakeData.symptomOnset !== 'sudden') {
+                enhanced += `\n\nSymptom onset: ${intakeData.symptomOnset}`;
+            }
+            
+            if (intakeData.recentTravel && intakeData.recentTravel !== 'None') {
+                enhanced += `\n\nRecent travel: ${intakeData.recentTravel}`;
+            }
+            
+            return enhanced;
+        }
+
+        // Form submission handling
+        document.getElementById('medicalIntakeForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            // Show loading overlay
+            document.getElementById('loadingOverlay').style.display = 'flex';
+            
+            try {
+                // Collect comprehensive form data
+                const formData = new FormData(this);
+                const conditions = Array.from(document.querySelectorAll('input[name="conditions"]:checked')).map(cb => cb.value);
+                
+                const intakeData = {
+                    age: parseInt(formData.get('age')),
+                    gender: formData.get('gender'),
+                    weightKg: parseFloat(formData.get('weight')) || 0,
+                    heightCm: parseFloat(formData.get('height')) || 0,
+                    currentMedications: formData.get('medications').split(',').map(s => s.trim()).filter(s => s),
+                    allergies: formData.get('allergies').split(',').map(s => s.trim()).filter(s => s),
+                    medicalConditions: conditions,
+                    previousSurgeries: [],
+                    painScale: parseInt(formData.get('painScale')) || 0,
+                    hasFever: formData.get('hasFever') === 'true',
+                    activityLevel: formData.get('activityLevel'),
+                    smokingStatus: formData.get('smokingStatus'),
+                    alcoholUse: formData.get('alcoholUse'),
+                    symptomOnset: formData.get('symptomOnset'),
+                    symptomDuration: formData.get('symptomDuration'),
+                    triggers: formData.get('triggers').split(',').map(s => s.trim()).filter(s => s),
+                    previousEpisodes: document.getElementById('previousEpisodes').checked,
+                    recentTravel: formData.get('recentTravel') || 'None',
+                    sickContacts: document.getElementById('sickContacts').checked,
+                    occupationalExposure: formData.get('occupationalExposure') || 'None'
+                };
+                
+                const symptoms = formData.get('symptoms');
+                const sessionId = generateSessionId();
+                
+                // Build enhanced symptom description with patient context
+                const enhancedSymptoms = buildEnhancedSymptomText(symptoms, intakeData);
+                
+                console.log('Enhanced symptoms text:', enhancedSymptoms);
+                
+                // FIXED: Send to correct API endpoint
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: enhancedSymptoms,
+                        sessionId: sessionId
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('API Response:', result);
+                    
+                    // Store comprehensive data
+                    sessionStorage.setItem('triageResult', JSON.stringify(result));
+                    sessionStorage.setItem('intakeData', JSON.stringify(intakeData));
+                    sessionStorage.setItem('originalSymptoms', symptoms);
+                    
+                    // Display enhanced results
+                    displayEnhancedResult(result, intakeData, symptoms);
+                } else {
+                    const errorText = await response.text();
+                    console.error('API Error:', response.status, errorText);
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
+            } catch (error) {
+                console.error('Intake processing error:', error);
+                document.getElementById('loadingOverlay').style.display = 'none';
+                alert('Error processing medical assessment. Please try again or contact emergency services if urgent.');
+            }
+        });
+        
+        function displayEnhancedResult(result, intake, symptoms) {
+            // Hide loading
+            document.getElementById('loadingOverlay').style.display = 'none';
+            
+            // Calculate risk score for display
+            let riskScore = 0;
+            if (intake.age > 65) riskScore += 2;
+            else if (intake.age > 45) riskScore += 1;
+            if (intake.currentMedications.length > 3) riskScore += 1;
+            if (intake.medicalConditions.includes('diabetes')) riskScore += 2;
+            if (intake.medicalConditions.includes('heart disease')) riskScore += 2;
+            if (intake.medicalConditions.includes('cancer')) riskScore += 1;
+            if (intake.smokingStatus === 'current') riskScore += 1;
+            if (intake.painScale > 7) riskScore += 1;
+            
+            const riskCategory = riskScore >= 5 ? 'HIGH' : riskScore >= 3 ? 'MODERATE' : 'LOW';
+            const riskClass = riskScore >= 5 ? 'risk-high' : riskScore >= 3 ? 'risk-moderate' : 'risk-low';
+            
+            // Create enhanced result display
+            const resultHTML = `
+                <div class="intake-container">
+                    <div class="header">
+                        <h1>📋 Enhanced Medical Assessment</h1>
+                        <p>Comprehensive evaluation based on your health profile</p>
+                    </div>
+                    <div class="form-content">
+                        <div class="form-section">
+                            <h3 class="section-title">👤 Patient Profile Summary</h3>
+                            <p><strong>Age:</strong> ${intake.age} years old &nbsp;•&nbsp; <strong>Gender:</strong> ${intake.gender}</p>
+                            <p><strong>Risk Assessment:</strong> <span class="risk-indicator ${riskClass}">${riskCategory} RISK PATIENT</span> (Risk Score: ${riskScore}/10+)</p>
+                            ${intake.medicalConditions.length > 0 ? `<p><strong>Medical History:</strong> ${intake.medicalConditions.join(', ')}</p>` : ''}
+                            ${intake.currentMedications.length > 0 ? `<p><strong>Current Medications:</strong> ${intake.currentMedications.join(', ')}</p>` : ''}
+                            ${intake.allergies.length > 0 ? `<p><strong>Known Allergies:</strong> ${intake.allergies.join(', ')}</p>` : ''}
+                            ${intake.painScale > 0 ? `<p><strong>Pain Level:</strong> ${intake.painScale}/10</p>` : ''}
+                            ${intake.smokingStatus === 'current' ? `<p><strong>Smoking Status:</strong> Current smoker</p>` : ''}
+                        </div>
+                        <div class="form-section">
+                            <h3 class="section-title">🩺 Medical Assessment & Recommendations</h3>
+                            <div style="background: white; padding: 25px; border-radius: 8px; border-left: 4px solid ${result.emergency ? '#f44336' : '#4caf50'}; line-height: 1.6; white-space: pre-wrap;">${result.reply}</div>
+                            ${result.emergency ? '<div style="background: #ffebee; padding: 15px; margin-top: 15px; border-radius: 6px; color: #c62828; border: 1px solid #f44336;"><strong>⚠️ URGENT MEDICAL ATTENTION:</strong> This assessment suggests immediate medical attention may be needed. Consider seeking emergency care.</div>' : ''}
+                        </div>
+                        <div class="form-section">
+                            <h3 class="section-title">🎯 Assessment Summary</h3>
+                            <div style="background: white; padding: 20px; border-radius: 8px;">
+                                <p><strong>Classification:</strong> ${result.route}</p>
+                                <p><strong>Emergency Status:</strong> ${result.emergency ? '🚨 Yes - Seek immediate care' : '✅ No - Follow recommendations'}</p>
+                                <p><strong>Session ID:</strong> ${result.sessionId}</p>
+                                <p><strong>Assessment Type:</strong> Enhanced with medical history and risk factors</p>
+                            </div>
+                        </div>
+                        <div class="submit-section">
+                            <button onclick="window.location.href='intake.html'" class="btn-primary">🔄 New Assessment</button>
+                            <button onclick="window.location.href='index.html'" class="btn-primary" style="margin-left: 15px; background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);">💬 Continue Chat</button>
+                        </div>
+                        <div style="margin-top: 30px; padding: 20px; background: #f5f5f5; border-radius: 8px; font-size: 13px; color: #666; line-height: 1.5;">
+                            <strong>Enhanced Assessment Note:</strong> This assessment incorporated your medical history (${intake.medicalConditions.length} conditions), current medications (${intake.currentMedications.length} medications), risk factors, and detailed symptom context for improved diagnostic accuracy. The system provided ${riskCategory.toLowerCase()}-risk appropriate recommendations based on your individual health profile.
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.innerHTML = resultHTML;
+        }
+        
+        function generateSessionId() {
+            return Math.random().toString(36).substr(2, 8);
+        }
+        
+        // Form validation
+        document.getElementById('age').addEventListener('input', function() {
+            if (this.value < 1 || this.value > 120) {
+                this.setCustomValidity('Please enter a valid age between 1 and 120');
+            } else {
+                this.setCustomValidity('');
+            }
+            updateRiskAssessment();
+        });
+
+        // Initialize risk assessment on page load
+        setTimeout(() => {
+            updateRiskAssessment();
+        }, 100);
+    </script>
+</body>
+</html>

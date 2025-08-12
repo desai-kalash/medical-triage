@@ -296,4 +296,109 @@ public class Messages {
             }
         }
     }
+
+    // ========== MEDICAL INTAKE MESSAGES (PHASE 1 ENHANCEMENT) ==========
+    public interface IntakeCommand {}
+    
+    /**
+     * Comprehensive medical intake data structure for enhanced patient assessment
+     */
+    public static class MedicalIntake {
+        // Demographics
+        public final int age;
+        public final String gender;
+        public final double weightKg;
+        public final double heightCm;
+        
+        // Medical History
+        public final List<String> currentMedications;
+        public final List<String> allergies;
+        public final List<String> medicalConditions;
+        public final List<String> previousSurgeries;
+        
+        // Current Health Context
+        public final int painScale;  // 0-10
+        public final boolean hasFever;
+        public final String activityLevel;  // "normal", "limited", "bedbound"
+        public final String smokingStatus;  // "never", "former", "current"
+        public final String alcoholUse;     // "none", "occasional", "regular", "heavy"
+        
+        // Symptom Context
+        public final String symptomOnset;   // "sudden", "gradual", "chronic"
+        public final String symptomDuration; // "minutes", "hours", "days", "weeks", "months"
+        public final List<String> triggers;  // What makes symptoms better/worse
+        public final boolean previousEpisodes;
+        
+        // Social Context
+        public final String recentTravel;
+        public final boolean sickContacts;
+        public final String occupationalExposure;
+        public final Instant timestamp;
+        
+        public MedicalIntake(int age, String gender, double weightKg, double heightCm,
+                           List<String> currentMedications, List<String> allergies,
+                           List<String> medicalConditions, List<String> previousSurgeries,
+                           int painScale, boolean hasFever, String activityLevel,
+                           String smokingStatus, String alcoholUse, String symptomOnset,
+                           String symptomDuration, List<String> triggers, boolean previousEpisodes,
+                           String recentTravel, boolean sickContacts, String occupationalExposure) {
+            this.age = age;
+            this.gender = gender;
+            this.weightKg = weightKg;
+            this.heightCm = heightCm;
+            this.currentMedications = currentMedications != null ? currentMedications : List.of();
+            this.allergies = allergies != null ? allergies : List.of();
+            this.medicalConditions = medicalConditions != null ? medicalConditions : List.of();
+            this.previousSurgeries = previousSurgeries != null ? previousSurgeries : List.of();
+            this.painScale = painScale;
+            this.hasFever = hasFever;
+            this.activityLevel = activityLevel;
+            this.smokingStatus = smokingStatus;
+            this.alcoholUse = alcoholUse;
+            this.symptomOnset = symptomOnset;
+            this.symptomDuration = symptomDuration;
+            this.triggers = triggers != null ? triggers : List.of();
+            this.previousEpisodes = previousEpisodes;
+            this.recentTravel = recentTravel;
+            this.sickContacts = sickContacts;
+            this.occupationalExposure = occupationalExposure;
+            this.timestamp = Instant.now();
+        }
+        
+        public int calculateBaseRiskScore() {
+            int riskScore = 0;
+            if (age > 65) riskScore += 2;
+            else if (age > 45) riskScore += 1;
+            if (currentMedications.size() > 3) riskScore += 1;
+            if (medicalConditions.contains("diabetes")) riskScore += 2;
+            if (medicalConditions.contains("heart disease")) riskScore += 2;
+            if (smokingStatus.equals("current")) riskScore += 1;
+            if (painScale > 7) riskScore += 1;
+            return riskScore;
+        }
+        
+        public String getRiskCategory() {
+            int score = calculateBaseRiskScore();
+            if (score >= 5) return "HIGH";
+            if (score >= 3) return "MODERATE";
+            return "LOW";
+        }
+    }
+    
+    public static class ProcessSymptomsWithIntake implements TriageCommand {
+        public final String sessionId;
+        public final String symptoms;
+        public final MedicalIntake intake;
+        public final ActorRef<TriageResponse> replyTo;
+        public final Instant timestamp;
+        
+        public ProcessSymptomsWithIntake(String sessionId, String symptoms, MedicalIntake intake, 
+                                       ActorRef<TriageResponse> replyTo) {
+            this.sessionId = sessionId;
+            this.symptoms = symptoms;
+            this.intake = intake;
+            this.replyTo = replyTo;
+            this.timestamp = Instant.now();
+        }
+    }
 }

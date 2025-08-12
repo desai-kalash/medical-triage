@@ -18,6 +18,7 @@ import java.util.concurrent.CompletionStage;
 
 /**
  * PHASE 1: HttpServer - Connected to Actor System
+ * PHASE 2: Enhanced with static file serving for intake.html
  * Uses ProcessSymptoms message that TriageRouterActor actually handles
  */
 public class HttpServer extends AllDirectives {
@@ -34,12 +35,73 @@ public class HttpServer extends AllDirectives {
 
     public Route createRoutes() {
         return concat(
+            // Root path serves main index
             get(() -> pathSingleSlash(() -> 
                 getFromResource("public/index.html")
             )),
+            
+            // PHASE 2: Direct static file access (intake.html, style.css, etc.)
+            get(() -> getFromResourceDirectory("public")),
+            
+            // Static prefix for organized static content
             get(() -> pathPrefix("static", () -> 
                 getFromResourceDirectory("public")
             )),
+            
+            // API endpoints
+            path("api", () -> concat(
+                path("triage", () ->
+                    post(() ->
+                        entity(Jackson.unmarshaller(ChatRequest.class), request -> {
+                            if (request.text == null || request.text.trim().isEmpty()) {
+                                return complete(StatusCodes.BAD_REQUEST, "Missing text field");
+                            }
+
+                            // Quick non-medical filter for obvious cases
+                            if (isObviouslyNonMedical(request.text.toLowerCase())) {
+                                String sessionId = request.sessionId != null ? request.sessionId : generateSessionId();
+                                ChatResponse response = createNonMedicalResponse(sessionId);
+                                return completeOK(response, Jackson.marshaller());
+                            }
+
+                            // PHASE 1: Send to Actor System using ProcessSymptoms
+                            String sessionId = request.sessionId != null ? request.sessionId : generateSessionId();
+                            
+                            System.out.println("🎭 PHASE 1: Sending to TriageRouterActor: " + request.text);
+                            
+                            CompletionStage<TriageResponse> actorResponse = AskPattern.ask(
+                                triageRouter,
+                                replyTo -> new ProcessSymptoms(sessionId, request.text.trim(), replyTo),
+                                Duration.ofSeconds(30),
+                                system.scheduler()
+                            );
+                            
+                            return onComplete(actorResponse, result -> {
+                                if (result.isSuccess()) {
+                                    TriageResponse triageResponse = result.get();
+                                    System.out.println("✅ PHASE 1: Got response from actors - Classification: " + triageResponse.classification);
+                                    System.out.println("✅ PHASE 1: Recommendation length: " + triageResponse.recommendation.length() + " characters");
+                                    
+                                    ChatResponse chatResponse = convertTriageResponseToWeb(triageResponse);
+                                    return completeOK(chatResponse, Jackson.marshaller());
+                                } else {
+                                    try {
+                                        result.get();
+                                    } catch (Exception throwable) {
+                                        System.err.println("❌ PHASE 1: Actor system error: " + throwable.getMessage());
+                                        throwable.printStackTrace();
+                                    }
+                                    
+                                    ChatResponse errorResponse = createErrorResponse(sessionId);
+                                    return complete(StatusCodes.INTERNAL_SERVER_ERROR, errorResponse, Jackson.marshaller());
+                                }
+                            });
+                        })
+                    )
+                )
+            )),
+            
+            // Legacy chat endpoint for compatibility
             path("chat", () ->
                 post(() ->
                     entity(Jackson.unmarshaller(ChatRequest.class), request -> {
@@ -47,19 +109,16 @@ public class HttpServer extends AllDirectives {
                             return complete(StatusCodes.BAD_REQUEST, "Missing text field");
                         }
 
-                        // Quick non-medical filter for obvious cases
                         if (isObviouslyNonMedical(request.text.toLowerCase())) {
                             String sessionId = request.sessionId != null ? request.sessionId : generateSessionId();
                             ChatResponse response = createNonMedicalResponse(sessionId);
                             return completeOK(response, Jackson.marshaller());
                         }
 
-                        // PHASE 1: Send to Actor System using ProcessSymptoms (what TriageRouter actually handles)
                         String sessionId = request.sessionId != null ? request.sessionId : generateSessionId();
                         
                         System.out.println("🎭 PHASE 1: Sending to TriageRouterActor: " + request.text);
                         
-                        // FIXED: Use ProcessSymptoms message and correct AskPattern syntax
                         CompletionStage<TriageResponse> actorResponse = AskPattern.ask(
                             triageRouter,
                             replyTo -> new ProcessSymptoms(sessionId, request.text.trim(), replyTo),
@@ -68,31 +127,33 @@ public class HttpServer extends AllDirectives {
                         );
                         
                         return onComplete(actorResponse, result -> {
-    if (result.isSuccess()) {
-        TriageResponse triageResponse = result.get();
-        System.out.println("✅ PHASE 1: Got response from actors - Classification: " + triageResponse.classification);
-        System.out.println("✅ PHASE 1: Recommendation length: " + triageResponse.recommendation.length() + " characters");
-        
-        ChatResponse chatResponse = convertTriageResponseToWeb(triageResponse);
-        return completeOK(chatResponse, Jackson.marshaller());
-    } else {
-        // FIXED: Correct way to handle Akka Try failure
-        try {
-            result.get(); // This will throw the actual exception
-        } catch (Exception throwable) {
-            System.err.println("❌ PHASE 1: Actor system error: " + throwable.getMessage());
-            throwable.printStackTrace();
-        }
-        
-        ChatResponse errorResponse = createErrorResponse(sessionId);
-        return complete(StatusCodes.INTERNAL_SERVER_ERROR, errorResponse, Jackson.marshaller());
-    }
-});
+                            if (result.isSuccess()) {
+                                TriageResponse triageResponse = result.get();
+                                System.out.println("✅ PHASE 1: Got response from actors - Classification: " + triageResponse.classification);
+                                System.out.println("✅ PHASE 1: Recommendation length: " + triageResponse.recommendation.length() + " characters");
+                                
+                                ChatResponse chatResponse = convertTriageResponseToWeb(triageResponse);
+                                System.out.println("🔄 PHASE 1: Converting TriageResponse to ChatResponse");
+                                return completeOK(chatResponse, Jackson.marshaller());
+                            } else {
+                                try {
+                                    result.get();
+                                } catch (Exception throwable) {
+                                    System.err.println("❌ PHASE 1: Actor system error: " + throwable.getMessage());
+                                    throwable.printStackTrace();
+                                }
+                                
+                                ChatResponse errorResponse = createErrorResponse(sessionId);
+                                return complete(StatusCodes.INTERNAL_SERVER_ERROR, errorResponse, Jackson.marshaller());
+                            }
+                        });
                     })
                 )
             ),
+            
+            // Health check endpoint
             path("health", () ->
-                get(() -> complete(StatusCodes.OK, "Phase 1: Actor Integration Active"))
+                get(() -> complete(StatusCodes.OK, "Phase 2: Static Files + Actor Integration Active"))
             )
         );
     }
@@ -125,30 +186,39 @@ public class HttpServer extends AllDirectives {
         );
     }
 
-    // Simple non-medical filter for Phase 1
-    private boolean isObviouslyNonMedical(String textLower) {
-        String[] obviousNonMedical = {
-            "who is", "who was", "capital of", "president of",
-            "movie", "song", "calculate", "weather today",
-            "what is the capital", "biography of", "history of"
-        };
-        
-        for (String pattern : obviousNonMedical) {
-            if (textLower.contains(pattern)) {
-                System.out.println("🔍 PHASE 1: Non-medical detected: " + pattern);
-                return true;
-            }
-        }
-        
-        // Famous people
-        if (textLower.contains("gandhi") || textLower.contains("einstein") || 
-            textLower.contains("shakespeare") || textLower.contains("napoleon")) {
-            System.out.println("🔍 PHASE 1: Famous person detected");
+    // Enhanced non-medical filter that excludes medical intake data
+private boolean isObviouslyNonMedical(String textLower) {
+    // Skip filtering if this looks like medical intake data
+    if (textLower.contains("patient profile:") || 
+        textLower.contains("medical history") ||
+        textLower.contains("current medications") ||
+        textLower.contains("symptoms:")) {
+        return false;  // Allow medical intake to pass through
+    }
+    
+    String[] obviousNonMedical = {
+        "who is", "who was", "capital of", "president of",
+        "movie", "song", "calculate", "weather today",
+        "what is the capital", "biography of", 
+        "history of america", "history of france", "history of england"  // Made more specific
+    };
+             
+    for (String pattern : obviousNonMedical) {
+        if (textLower.contains(pattern)) {
+            System.out.println("🔍 PHASE 2: Non-medical detected: " + pattern);
             return true;
         }
-        
-        return false;
     }
+    
+    // Famous people detection
+    if (textLower.contains("gandhi") || textLower.contains("einstein") || 
+        textLower.contains("shakespeare") || textLower.contains("napoleon")) {
+        System.out.println("🔍 PHASE 2: Famous person detected");
+        return true;
+    }
+    
+    return false;
+}
 
     private ChatResponse createNonMedicalResponse(String sessionId) {
         return new ChatResponse(
