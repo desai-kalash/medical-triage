@@ -191,7 +191,7 @@ public class LuceneVectorStore implements Closeable {
         public String category;
         public List<String> tags;
         public float score;
-        
+         
         @Override
         public String toString() {
             return String.format("RetrievedDoc{id='%s', category='%s', score=%.3f}", 

@@ -1,0 +1,40 @@
+sequenceDiagram
+  autonumber
+  actor User
+  participant UI as Browser UI<br/>index.html / intake.html
+  participant HTTP as Akka HTTP<br/>(Primary 2551)
+  participant UIA as UserInputActor
+  participant TR as TriageRouterActor
+  participant MEM as UserSessionActor
+  participant RET as RetrievalActor
+  participant LLM as LLMActor<br/>(Gemini)
+  participant CARE as Care Actors<br/>(Emergency / Self / Appt)
+  participant LOG as LoggerActor
+  participant VEC as Lucene HNSW Index
+  participant SRC as Live Sources<br/>NHS / Mayo / Medline
+
+  User->>UI: Enter symptoms / submit intake
+  UI->>HTTP: HTTP request
+  HTTP->>UIA: Parse & validate input
+  UIA->>TR: Structured query + metadata
+  TR->>MEM: ask(GetSessionHistory)
+  MEM-->>TR: Session history (context)
+  TR->>TR: Merge patient profile + history (context build)
+  TR->>RET: ask(Retrieve, topK, threshold)
+  RET->>VEC: Vector search (ANN)
+  VEC-->>RET: Top candidates + scores
+  alt Low similarity
+    RET->>SRC: Fetch authoritative context
+    SRC-->>RET: Snippets + citations
+  end
+  RET-->>TR: Consolidated context (local + live)
+  TR->>LLM: Structured clinical prompt (evidence + context)
+  LLM-->>TR: Assessment + differential + risk
+  TR->>TR: Risk stratification (LOW/MOD/HIGH)
+  TR->>CARE: forward(case, severity)
+  CARE-->>TR: Care-specific guidance
+  TR->>MEM: tell(UpdateSession)
+  TR->>LOG: tell(AuditEvent)
+  TR-->>HTTP: Structured response (assessment + urgency + sources)
+  HTTP-->>UI: Render recommendations + warnings
+  UI-->>User: Display results / next steps
