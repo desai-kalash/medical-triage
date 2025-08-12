@@ -254,25 +254,4 @@ mvn exec:java@cluster-service  # Service Node (2552)
 
 ---
 
-### How to add these assets so they look good on GitHub
 
-1. **Create a docs folder** in the repo root and place assets there:
-   - `docs/chat-example-kidney-stone.png`
-   - `docs/intake-example-kidney-stone.png`
-   - `docs/architecture.mmd`
-   - `docs/pipeline.mmd`
-2. **Keep the Mermaid blocks in this README**. GitHub renders Mermaid natively. The `.mmd` files are your editable sources if you want to export PNG/SVG later.
-3. (Optional) **Export static images** for the architecture/pipeline if you want image previews elsewhere:
-   ```bash
-   npm i -g @mermaid-js/mermaid-cli
-   mmdc -i docs/architecture.mmd -o docs/architecture-diagram.png
-   mmdc -i docs/pipeline.mmd -o docs/pipeline-diagram.png
-   ```
-   Then ensure the README image tag points to `docs/architecture-diagram.png` (already set at top).
-4. **Commit the assets and README**:
-   ```bash
-   git add README.md docs/
-   git commit -m "README: add screenshots + Mermaid diagrams (architecture/pipeline)"
-   git push
-   ```
-5. **Dark mode check**: images use neutral palettes; Mermaid uses dark-friendly colors. If needed, regenerate PNGs with colors tweaked in `.mmd`.
