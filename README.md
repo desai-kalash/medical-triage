@@ -59,35 +59,34 @@ This system demonstrates:
 
 ### System Architecture (Mermaid)
 ```mermaid
-%% File: docs/architecture.mmd
 flowchart LR
   classDef node fill:#111,border:#444,color:#eee,stroke-width:1.2;
   classDef accent fill:#1b3a57,border:#4c8bb3,color:#e7f1f8;
   classDef ext fill:#151515,border:#666,color:#ddd,stroke-dasharray:3 2;
 
-  U[User]:::node -->|HTTPS| B[Browser UI\nindex.html / intake.html]:::node
-  B -->|HTTP| H[Akka HTTP Server\n(Primary Node 2551)]:::node
+  U["User"]:::node -->|HTTPS| B["Browser UI<br/>index.html / intake.html"]:::node
+  B -->|HTTP| H["Akka HTTP Server<br/>(Primary Node 2551)"]:::node
 
-  subgraph C[Akka Cluster (Typed)]
+  subgraph C["Akka Cluster (Typed)"]
     direction LR
-    subgraph P[Primary Node :2551]
-      H --> UIA[UserInputActor]:::node
-      UIA --> TRA[TriageRouterActor]:::accent
-      TRA --> USA[UserSessionActor\n(session memory)]:::node
-      TRA --> RET[RetrievalActor]:::node
-      TRA --> LLM[LLMActor\n(Gemini 1.5 Flash)]:::accent
-      TRA --> CARE[(EmergencyCareActor\nSelfCareActor\nAppointmentActor)]:::node
-      PLOG[LoggerActor]:::node
+    subgraph P["Primary Node :2551"]
+      H --> UIA["UserInputActor"]:::node
+      UIA --> TRA["TriageRouterActor"]:::accent
+      TRA --> USA["UserSessionActor<br/>(session memory)"]:::node
+      TRA --> RET["RetrievalActor"]:::node
+      TRA --> LLM["LLMActor<br/>(Gemini 1.5 Flash)"]:::accent
+      TRA --> CARE["EmergencyCareActor<br/>SelfCareActor<br/>AppointmentActor"]:::node
+      PLOG["LoggerActor"]:::node
       UIA --> PLOG
       TRA --> PLOG
     end
 
-    subgraph S[Service Node :2552]
+    subgraph S["Service Node :2552"]
       direction TB
-      SRET[RetrievalActor]:::node
-      SLLM[LLMActor]:::accent
-      SCARE[(Care Actors)]:::node
-      SLOG[LoggerActor]:::node
+      SRET["RetrievalActor"]:::node
+      SLLM["LLMActor"]:::accent
+      SCARE["Care Actors"]:::node
+      SLOG["LoggerActor"]:::node
     end
 
     RET <-->|work sharing| SRET
@@ -96,25 +95,25 @@ flowchart LR
     PLOG -. audit .- SLOG
   end
 
-  subgraph K[Knowledge Layer]
+  subgraph K["Knowledge Layer"]
     direction TB
-    VS[(Lucene HNSW\nVector Index)]:::node
-    CORPUS[Curated Medical Corpus\n(JSONL)]:::node
+    VS["Lucene HNSW<br/>Vector Index"]:::node
+    CORPUS["Curated Medical Corpus<br/>(JSONL)"]:::node
   end
   RET -->|ANN search| VS
   VS --> CORPUS
 
-  subgraph EXT[Authoritative Medical Sources]
-    NHS[NHS]:::ext
-    MAYO[Mayo Clinic]:::ext
-    MEDLINE[MedlinePlus]:::ext
+  subgraph EXT["Authoritative Medical Sources"]
+    NHS["NHS"]:::ext
+    MAYO["Mayo Clinic"]:::ext
+    MEDLINE["MedlinePlus"]:::ext
   end
-  RET -->|live fetch\non low similarity| NHS
+  RET -->|live fetch<br/>on low similarity| NHS
   RET --> MAYO
   RET --> MEDLINE
 
   LLM -->|prompt+context| TRA
-  TRA -->|final assessment\n+ urgency| B
+  TRA -->|final assessment<br/>+ urgency| B
 ```
 
 ---
